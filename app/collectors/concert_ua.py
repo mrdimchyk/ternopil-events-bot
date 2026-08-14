@@ -5,4 +5,4 @@ SOURCE_NAME = "Concert.ua"
 
 
 def collect(timeout: float = 20.0):
-    return collect_jsonld(BASE_URL, timeout=timeout)
+    return collect_jsonld(BASE_URL, SOURCE_NAME, timeout=timeout)
