@@ -4,6 +4,7 @@ from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.db.models import Event
 from app.db.session import SessionLocal
@@ -37,7 +38,13 @@ def _format_event(event: Event) -> str:
 def _events_for_day(offset: int) -> list[Event]:
     start, end = _day_range(offset)
     with SessionLocal() as session:
-        return list(session.scalars(select(Event).where(Event.start_at >= start, Event.start_at < end, Event.status == "active").order_by(Event.start_at, Event.title)).unique().all())
+        query = (
+            select(Event)
+            .options(selectinload(Event.venue))
+            .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
+            .order_by(Event.start_at, Event.title)
+        )
+        return list(session.scalars(query).all())
 
 
 def _events_keyboard(events: list[Event]) -> InlineKeyboardMarkup:
