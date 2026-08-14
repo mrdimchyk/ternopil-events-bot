@@ -28,11 +28,10 @@ def collect_jsonld(
     source_name: str | None = None,
     timeout: float = 20.0,
 ) -> list[RawEvent]:
-    """Collect Schema.org Event JSON-LD from a source page.
+    """Collect Schema.org Event data from a source page.
 
-    ``source_name`` is accepted for compatibility with source-specific
-    collectors; the normalized RawEvent keeps the source identity at the
-    persistence layer.
+    Supports Event subtypes such as MusicEvent/TheaterEvent and events nested
+    inside @graph, itemListElement, item, and other JSON-LD containers.
     """
     _ = source_name
     response = httpx.get(
@@ -45,63 +44,73 @@ def collect_jsonld(
     soup = BeautifulSoup(response.text, "lxml")
     result: list[RawEvent] = []
 
-    def consume(value):
+    def consume(value) -> None:
         if isinstance(value, list):
             for item in value:
                 consume(item)
             return
         if not isinstance(value, dict):
             return
-        if "@graph" in value:
-            consume(value["@graph"])
+
         event_type = value.get("@type")
-        is_event = event_type == "Event" or (
-            isinstance(event_type, list) and "Event" in event_type
+        event_types = event_type if isinstance(event_type, list) else [event_type]
+        is_event = any(
+            isinstance(item, str)
+            and (item == "Event" or item.rsplit("/", 1)[-1].endswith("Event"))
+            for item in event_types
         )
-        if not is_event:
-            return
 
-        name = value.get("name")
-        start = value.get("startDate")
-        if not name or not start:
-            return
+        if is_event:
+            name = value.get("name")
+            start = value.get("startDate")
+            if name and start:
+                location = value.get("location") or {}
+                if isinstance(location, list):
+                    location = location[0] if location else {}
+                venue = location.get("name") if isinstance(location, dict) else None
+                address = location.get("address") if isinstance(location, dict) else None
+                if isinstance(address, dict):
+                    address = address.get("streetAddress")
 
-        location = value.get("location") or {}
-        if isinstance(location, list):
-            location = location[0] if location else {}
-        venue = location.get("name") if isinstance(location, dict) else None
-        address = location.get("address") if isinstance(location, dict) else None
-        if isinstance(address, dict):
-            address = address.get("streetAddress")
+                offers = value.get("offers") or {}
+                if isinstance(offers, list):
+                    offers = offers[0] if offers else {}
+                ticket_url = offers.get("url") if isinstance(offers, dict) else None
+                price = offers.get("price") if isinstance(offers, dict) else None
+                price_text = f"{price} грн" if price is not None else None
+                source_url = urljoin(url, value.get("url") or url)
 
-        offers = value.get("offers") or {}
-        if isinstance(offers, list):
-            offers = offers[0] if offers else {}
-        ticket_url = offers.get("url") if isinstance(offers, dict) else None
-        price = offers.get("price") if isinstance(offers, dict) else None
-        price_text = f"{price} грн" if price is not None else None
-        source_url = urljoin(url, value.get("url") or url)
+                result.append(
+                    RawEvent(
+                        external_id=_id(source_url, str(name), str(start)),
+                        title=str(name).strip(),
+                        category=None,
+                        start_at=_parse_datetime(str(start)),
+                        venue=venue,
+                        address=address,
+                        price_text=price_text,
+                        ticket_url=ticket_url,
+                        source_url=source_url,
+                        description=value.get("description"),
+                    )
+                )
 
-        result.append(
-            RawEvent(
-                external_id=_id(source_url, str(name), str(start)),
-                title=str(name).strip(),
-                category=None,
-                start_at=_parse_datetime(str(start)),
-                venue=venue,
-                address=address,
-                price_text=price_text,
-                ticket_url=ticket_url,
-                source_url=source_url,
-                description=value.get("description"),
-            )
-        )
+        # Many sites wrap events in ItemList/ListItem or other containers.
+        # Walk all nested JSON-LD values so the collector is not tied to one
+        # particular schema layout.
+        for key, child in value.items():
+            if key.startswith("@") and key not in {"@graph", "@type"}:
+                continue
+            if key == "@type":
+                continue
+            consume(child)
 
     for script in soup.select('script[type="application/ld+json"]'):
         try:
-            consume(json.loads(script.string or script.get_text()))
+            payload = json.loads(script.string or script.get_text())
         except (json.JSONDecodeError, TypeError):
             continue
+        consume(payload)
 
     unique = {event.external_id: event for event in result}
     return list(unique.values())
