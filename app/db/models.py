@@ -1,0 +1,40 @@
+from datetime import datetime
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.db.session import Base
+
+class Source(Base):
+    __tablename__ = "sources"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    base_url: Mapped[str] = mapped_column(String(500))
+    events = relationship("Event", back_populates="source")
+
+class Venue(Base):
+    __tablename__ = "venues"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    city: Mapped[str] = mapped_column(String(100), default="Ternopil")
+    events = relationship("Event", back_populates="venue")
+
+class Event(Base):
+    __tablename__ = "events"
+    __table_args__ = (UniqueConstraint("source_id", "external_id", name="uq_event_source_external"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(500), index=True)
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ticket_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    source_url: Mapped[str] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(String(50), default="active")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"))
+    venue_id: Mapped[int | None] = mapped_column(ForeignKey("venues.id"), nullable=True)
+    source = relationship("Source", back_populates="events")
+    venue = relationship("Venue", back_populates="events")
