@@ -58,7 +58,34 @@ def _parse_date_time(value: str) -> datetime | None:
 
 
 def _parse_start(block: str) -> datetime | None:
-    return _parse_date_time(block)
+    """Parse the event date first, then find the event time anywhere in its block."""
+    date_match = re.search(
+        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})?",
+        block,
+        re.I,
+    )
+    if not date_match:
+        return None
+
+    day, month, year = date_match.groups()
+    year_value = int(year) if year else datetime.now().year
+    time_matches = list(re.finditer(r"\b(\d{1,2}):(\d{2})\b", block))
+    if not time_matches:
+        return None
+    time_match = next(
+        (m for m in time_matches if m.start() > date_match.end()),
+        time_matches[0],
+    )
+    try:
+        return datetime(
+            year_value,
+            MONTHS[month.lower()],
+            int(day),
+            int(time_match.group(1)),
+            int(time_match.group(2)),
+        )
+    except ValueError:
+        return None
 
 
 def _price(s: str) -> str | None:
@@ -137,24 +164,15 @@ def _month_urls(now: datetime) -> list[str]:
 
 
 def _get_page(client: httpx.Client, url: str, timeout: float) -> str:
-    """Prefer Jina Reader because KARABAS blocks GitHub Actions with HTTP 403.
-
-    Direct access is retained as a fallback for environments where KARABAS
-    allows the request. This is deliberately the opposite order of the old
-    implementation: the old code failed at response.raise_for_status() before
-    Jina was ever attempted.
-    """
-    jina_error = None
+    """Prefer Jina Reader because KARABAS blocks GitHub Actions with HTTP 403."""
     try:
         response = client.get(JINA_PREFIX + url, timeout=timeout)
         response.raise_for_status()
         return response.text
-    except httpx.HTTPError as exc:
-        jina_error = exc
-
-    response = client.get(url, timeout=timeout)
-    response.raise_for_status()
-    return response.text
+    except httpx.HTTPError:
+        response = client.get(url, timeout=timeout)
+        response.raise_for_status()
+        return response.text
 
 
 def collect(timeout: float = 30.0):
@@ -173,8 +191,6 @@ def collect(timeout: float = 30.0):
             except httpx.HTTPError:
                 continue
 
-            # Jina returns Markdown/text; direct HTML is converted to text as
-            # well so the same extraction code handles both paths.
             if "<html" in text.lower() or "<body" in text.lower():
                 soup = BeautifulSoup(text, "lxml")
                 text = "\n".join(_clean(x) for x in soup.stripped_strings if _clean(x))
