@@ -1,4 +1,4 @@
-name: Collect KARABAS events
+name: Collect Ternopil events
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
-      - name: Collect KARABAS
+      - name: Collect all sources
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python scripts/collect_karabas.py
+        run: python scripts/collect_all.py
