@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
-from app.db.user_models import NotificationPreference, TelegramUser
+from app.db.user_models import NotificationPreference
 from app.services.users import ensure_user, set_tomorrow_notifications
 
 router = Router()
