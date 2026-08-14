@@ -21,7 +21,7 @@ _MONTH_SLUGS = [
 
 
 def collect(timeout: float = 20.0):
-    """Collect Karabas events from month pages.
+    """Collect Karabas events from public month pages.
 
     The Karabas root currently returns HTTP 403 to GitHub Actions runners,
     while public month/category pages remain crawlable. Avoid the blocked
@@ -31,7 +31,6 @@ def collect(timeout: float = 20.0):
     urls = []
     for offset in range(6):
         month_index = now.month - 1 + offset
-        year = now.year + month_index // 12
         month = month_index % 12
         urls.append(f"{BASE_URL}{_MONTH_SLUGS[month]}/")
 
