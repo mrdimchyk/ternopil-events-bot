@@ -22,7 +22,6 @@ MONTHS = {
     "листопада": 11,
     "грудня": 12,
 }
-
 UA_MONTH_RE = "|".join(MONTHS)
 
 
@@ -38,7 +37,6 @@ def _event_id(url: str, title: str, start_at: datetime | None) -> str:
 def _parse_datetime(text: str, default_year: int | None = None) -> datetime | None:
     text = _clean(text).lower().replace("’", "'")
 
-    # 1 серпня 2026, 19:00 / 1 серпня ' 2026, 19:00
     m = re.search(
         rf"(\d{{1,2}})\s+(?:[а-яіїєґ]+\s+)?({UA_MONTH_RE})\s*(?:['’]\s*)?(20\d{{2}})?[^0-9]{{0,12}}(\d{{1,2}}):(\d{{2}})",
         text,
@@ -49,23 +47,11 @@ def _parse_datetime(text: str, default_year: int | None = None) -> datetime | No
         return datetime(year, MONTHS[month_name], int(day), int(hour), int(minute))
 
     # TicketsBox: 17 вересня 19:00 вівторок
-    m = re.search(
-        rf"(\d{{1,2}})\s+({UA_MONTH_RE})\s+(\d{{1,2}}):(\d{{2}})",
-        text,
-    )
+    m = re.search(rf"(\d{{1,2}})\s+({UA_MONTH_RE})\s+(\d{{1,2}}):(\d{{2}})", text)
     if m:
         day, month_name, hour, minute = m.groups()
         year = default_year or datetime.now().year
         return datetime(year, MONTHS[month_name], int(day), int(hour), int(minute))
-
-    # Karabas sometimes renders: 1 Сб серпня ’ 2026 ... 19:00
-    m = re.search(
-        rf"(\d{{1,2}})\s+[а-яіїєґ]+\s+({UA_MONTH_RE})\s*(?:['’]\s*)?(20\d{{2}}).*?(\d{{1,2}}):(\d{{2}})",
-        text,
-    )
-    if m:
-        day, month_name, year, hour, minute = m.groups()
-        return datetime(int(year), MONTHS[month_name], int(day), int(hour), int(minute))
 
     return None
 
@@ -76,9 +62,7 @@ def _price(text: str) -> str | None:
         text,
         re.I,
     )
-    if not m:
-        return None
-    return _clean(m.group(0))
+    return _clean(m.group(0)) if m else None
 
 
 def _category(text: str) -> str | None:
@@ -100,14 +84,8 @@ def _category(text: str) -> str | None:
 
 def _is_action(text: str) -> bool:
     return _clean(text).lower() in {
-        "купити",
-        "купить",
-        "buy",
-        "квитки",
-        "квиток",
-        "детальніше",
-        "подробнее",
-        "more",
+        "купити", "купить", "buy", "квитки", "квиток",
+        "детальніше", "подробнее", "more",
     }
 
 
@@ -142,8 +120,7 @@ def _title(block, link) -> str | None:
 
 
 def _event_url(block, base_url: str, fallback_link) -> str:
-    links = block.select("a[href]")
-    for link in links:
+    for link in block.select("a[href]"):
         text = _clean(link.get_text(" ", strip=True))
         href = link.get("href")
         if href and text and not _is_action(text):
@@ -152,34 +129,40 @@ def _event_url(block, base_url: str, fallback_link) -> str:
 
 
 def _venue(text: str, start_at: datetime | None, price_text: str | None) -> str | None:
-    if "Тернопіль" not in text and "Тернополь" not in text:
-        return None
+    # TicketsBox format: "Тернопіль • Venue"
+    m = re.search(r"Терноп(?:і|о)ль\s*[•·]\s*(.+)", text, re.I)
+    if m:
+        tail = m.group(1)
+        if price_text:
+            pos = tail.lower().find(price_text.lower())
+            if pos >= 0:
+                tail = tail[:pos]
+        tail = re.split(r"\b(Продано|Скасовано|Перенесено|EVENT ENDED|Sold out|Cancelled|Postponed)\b", tail, flags=re.I)[0]
+        return _clean(tail).strip("•|,–-") or None
+
+    # Karabas / Teatr format: "Тернопіль, ... HH:MM Venue ... price"
     tail = text
     if start_at:
-        time_marker = f"{start_at.hour}:{start_at.minute:02d}"
-        pos = tail.find(time_marker)
+        marker = f"{start_at.hour}:{start_at.minute:02d}"
+        pos = tail.find(marker)
         if pos >= 0:
-            tail = tail[pos + len(time_marker):]
-    tail = re.sub(r"\b(КУПИТИ|КУПИТЬ|BUY|Детальніше|Подробнее)\b", "", tail, flags=re.I)
+            tail = tail[pos + len(marker):]
     if price_text:
         pos = tail.lower().find(price_text.lower())
         if pos >= 0:
             tail = tail[:pos]
-    tail = re.sub(r"\b(Продано|Скасовано|Перенесено|Sold out|Cancelled|Postponed)\b.*", "", tail, flags=re.I)
-    tail = _clean(tail).strip("•|,–-")
-    return tail or None
+    tail = re.split(r"\b(Продано|Скасовано|Перенесено|EVENT ENDED|Sold out|Cancelled|Postponed)\b", tail, flags=re.I)[0]
+    tail = re.sub(r"\b(КУПИТИ|КУПИТЬ|BUY|Детальніше|Подробнее)\b", "", tail, flags=re.I)
+    return _clean(tail).strip("•|,–-") or None
 
 
-def collect_html(
-    urls: list[str],
-    timeout: float = 20.0,
-    min_future: bool = True,
-) -> list[RawEvent]:
+def _cancelled(text: str) -> bool:
+    return bool(re.search(r"\b(скасовано|перенесено|cancelled|postponed)\b", text, re.I))
+
+
+def collect_html(urls: list[str], timeout: float = 20.0, min_future: bool = True) -> list[RawEvent]:
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/128.0 Safari/537.36"
-        ),
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
         "Cache-Control": "no-cache",
@@ -193,8 +176,8 @@ def collect_html(
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
             page_text = _clean(soup.get_text(" ", strip=True))
-            default_year_match = re.search(r"\b(20\d{2})\b", page_text)
-            default_year = int(default_year_match.group(1)) if default_year_match else now.year
+            year_match = re.search(r"\b(20\d{2})\b", page_text)
+            default_year = int(year_match.group(1)) if year_match else now.year
 
             seen_blocks: set[int] = set()
             for link in soup.select("a[href]"):
@@ -207,10 +190,10 @@ def collect_html(
                 text = _clean(block.get_text(" ", strip=True))
                 if "Тернопіль" not in text and "Тернополь" not in text:
                     continue
-                start_at = _parse_datetime(text, default_year=default_year)
-                if not start_at:
+                if _cancelled(text):
                     continue
-                if min_future and start_at < now:
+                start_at = _parse_datetime(text, default_year=default_year)
+                if not start_at or (min_future and start_at < now):
                     continue
 
                 title = _title(block, link)
@@ -218,20 +201,17 @@ def collect_html(
                     continue
                 price_text = _price(text)
                 source_url = _event_url(block, url, link)
-                result.append(
-                    RawEvent(
-                        external_id=_event_id(source_url, title, start_at),
-                        title=title,
-                        category=_category(text),
-                        start_at=start_at,
-                        venue=_venue(text, start_at, price_text),
-                        address=None,
-                        price_text=price_text,
-                        ticket_url=source_url,
-                        source_url=source_url,
-                        description=None,
-                    )
-                )
+                result.append(RawEvent(
+                    external_id=_event_id(source_url, title, start_at),
+                    title=title,
+                    category=_category(text),
+                    start_at=start_at,
+                    venue=_venue(text, start_at, price_text),
+                    address=None,
+                    price_text=price_text,
+                    ticket_url=source_url,
+                    source_url=source_url,
+                    description=None,
+                ))
 
-    unique = {event.external_id: event for event in result}
-    return list(unique.values())
+    return list({event.external_id: event for event in result}.values())
