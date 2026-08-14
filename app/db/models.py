@@ -1,6 +1,8 @@
 from datetime import datetime
+
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.session import Base
 
 
@@ -29,6 +31,7 @@ class Event(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     external_id: Mapped[str] = mapped_column(String(255))
+    group_key: Mapped[str] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(500), index=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
