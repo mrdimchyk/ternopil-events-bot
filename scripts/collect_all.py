@@ -5,9 +5,7 @@ from app.services.source_runs import finish_run, start_run
 
 
 def main() -> None:
-    # Ensure the PostgreSQL schema exists before any collector runs.
     init_db()
-
     totals = {"collected": 0, "changed": 0, "failed": 0}
 
     for source_name, base_url, collect in COLLECTORS:
@@ -50,12 +48,12 @@ def main() -> None:
         f"changed={totals['changed']} failed={totals['failed']}"
     )
 
-    # A green scheduled run must mean that every configured source completed.
-    # Partial failures are therefore surfaced to GitHub Actions instead of
-    # being hidden behind a successful process exit code.
-    if totals["failed"]:
+    # A run with no successful source is a real collection failure.
+    # Individual source outages remain visible in source_runs without
+    # preventing the healthy sources from updating the database.
+    if totals["failed"] and totals["collected"] == 0:
         raise RuntimeError(
-            f"Collection completed with {totals['failed']} failed source(s)."
+            f"Collection failed: all {totals['failed']} configured sources failed."
         )
 
 
