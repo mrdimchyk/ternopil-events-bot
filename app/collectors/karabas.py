@@ -53,15 +53,16 @@ def _price(s: str) -> str | None:
     return _clean(m.group(0)) if m else None
 
 
+def _is_date_heading(line: str) -> bool:
+    return bool(re.search(rf"^\d{{1,2}}\s+.*?({MONTH_PATTERN}).*?20\d{{2}}\s*$", line, re.I))
+
+
 def _extract_events(text: str, source_url: str, now: datetime) -> list[RawEvent]:
     lines = [_clean(x.strip("#*- ")) for x in text.splitlines() if _clean(x.strip("#*- "))]
-    date_indices = [i for i, line in enumerate(lines) if _parse_date_time(line)]
+    date_indices = [i for i, line in enumerate(lines) if _is_date_heading(line)]
     events: list[RawEvent] = []
 
     for pos, idx in enumerate(date_indices):
-        start = _parse_date_time(lines[idx])
-        if not start or start < now:
-            continue
         end = date_indices[pos + 1] if pos + 1 < len(date_indices) else len(lines)
         block_lines = lines[idx:end]
         block = " ".join(block_lines)
@@ -69,10 +70,14 @@ def _extract_events(text: str, source_url: str, now: datetime) -> list[RawEvent]
             continue
         if re.search(r"\b(Скасовано|Перенесено|Cancelled|Transferred|Продано)\b", block, re.I):
             continue
+        start = _parse_start(block)
+        if not start or start < now:
+            continue
         city_idx = next((j for j, x in enumerate(block_lines) if re.search(r"^Тернопіль(?:,|\s|$)", x, re.I)), None)
         if city_idx is None:
             continue
-        title = next((x for x in reversed(block_lines[1:city_idx]) if len(x) > 2 and x.lower() not in {"концерти", "театри", "фестивалі", "клуби", "інші"}), None)
+        ignored = {"концерти", "театри", "фестивалі", "клуби", "інші"}
+        title = next((x for x in reversed(block_lines[1:city_idx]) if len(x) > 2 and x.lower() not in ignored and not _is_date_heading(x)), None)
         if not title:
             continue
         venue = block_lines[city_idx + 1] if city_idx + 1 < len(block_lines) else None
