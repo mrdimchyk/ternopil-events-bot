@@ -3,6 +3,11 @@ from app.db.session import SessionLocal, init_db
 from app.services.events import upsert_events
 from app.services.source_runs import finish_run, start_run
 
+# A zero-result source is treated as a collector regression unless the source
+# is explicitly known to be legitimately empty. This prevents HTTP/parsing
+# failures from being silently reported as successful runs.
+ALLOW_EMPTY_SOURCES = {"TicketsBox"}
+
 
 def main() -> None:
     init_db()
@@ -15,6 +20,12 @@ def main() -> None:
 
         try:
             raw_events = collect()
+            if not raw_events and source_name not in ALLOW_EMPTY_SOURCES:
+                raise RuntimeError(
+                    "Collector returned zero events for a source expected to contain "
+                    "current Ternopil events; inspect the source/parser before accepting the run."
+                )
+
             with SessionLocal() as session:
                 changed = upsert_events(session, raw_events, source_name, base_url)
                 run = session.get(type(run), run.id)
@@ -48,12 +59,10 @@ def main() -> None:
         f"changed={totals['changed']} failed={totals['failed']}"
     )
 
-    # A run with no successful source is a real collection failure.
-    # Individual source outages remain visible in source_runs without
-    # preventing the healthy sources from updating the database.
-    if totals["failed"] and totals["collected"] == 0:
+    if totals["failed"]:
         raise RuntimeError(
-            f"Collection failed: all {totals['failed']} configured sources failed."
+            f"Collection completed with {totals['failed']} source failure(s); "
+            "do not treat the run as healthy."
         )
 
 
