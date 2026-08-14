@@ -25,4 +25,5 @@ jobs:
       - name: Collect all sources
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONUNBUFFERED: "1"
         run: python scripts/collect_all.py
