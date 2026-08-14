@@ -1,7 +1,6 @@
 import hashlib
 import re
 from datetime import datetime
-from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
@@ -74,7 +73,7 @@ def _category(lines: list[str]) -> str | None:
 def _parse_lines(lines: list[str], page_url: str, year: int, now: datetime) -> list[RawEvent]:
     events: dict[str, RawEvent] = {}
     date_indices = [i for i, line in enumerate(lines) if _parse_date(line, year)]
-    for pos, i in enumerate(date_indices):
+    for i in date_indices:
         start = _parse_date(lines[i], year)
         if not start or start < now:
             continue
@@ -82,9 +81,10 @@ def _parse_lines(lines: list[str], page_url: str, year: int, now: datetime) -> l
         city_index = next((j for j, x in enumerate(window) if re.search(r"^Тернопіль(?:,|\s|$)", x, re.I)), None)
         if city_index is None:
             continue
-        before_city = window[:city_index]
         ignored = {"театр", "концерт", "спорт", "клуб", "цирк", "дітям", "балет", "розваги", "відпочинок", "театри", "концерти"}
-        title = next((x for x in reversed(before_city) if len(x) > 2 and x.lower() not in ignored), None)
+        title = next((x for x in reversed(lines[max(0, i - 6):i]) if len(x) > 2 and x.lower() not in ignored), None)
+        if not title:
+            title = next((x for x in window[:city_index] if len(x) > 2 and x.lower() not in ignored), None)
         if not title:
             continue
         block = " ".join(window)
@@ -94,20 +94,16 @@ def _parse_lines(lines: list[str], page_url: str, year: int, now: datetime) -> l
         if after_city and after_city[0] == "•":
             after_city = after_city[1:]
         venue = after_city[0] if after_city else None
-        href = None
-        for a in page_url[0] if False else []:
-            _ = a
-        source_url = page_url
         event = RawEvent(
-            external_id=_event_id(source_url, title, start),
+            external_id=_event_id(page_url, title, start),
             title=title,
             category=_category(window),
             start_at=start,
             venue=venue,
             address=None,
             price_text=_price(block),
-            ticket_url=source_url,
-            source_url=source_url,
+            ticket_url=page_url,
+            source_url=page_url,
             description=None,
         )
         events[event.external_id] = event
