@@ -14,7 +14,10 @@ MONTHS = {
     "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
 }
 MONTH_RE = "|".join(MONTHS)
-DATE_RE = re.compile(rf"^(\d{{1,2}})\s+({MONTH_RE})\s+(\d{{1,2}}):(\d{{2}})\b", re.I)
+DATE_RE = re.compile(
+    rf"^(\d{{1,2}})\s+({MONTH_RE})\s+(?:(20\d{{2}})\s*,?\s*)?(\d{{1,2}}):(\d{{2}})\b",
+    re.I,
+)
 
 
 def _clean(value: str) -> str:
@@ -25,19 +28,29 @@ def _event_id(url: str, title: str, start: datetime) -> str:
     return hashlib.sha256(f"{url}|{title}|{start.isoformat()}".encode()).hexdigest()[:32]
 
 
-def _parse_date(line: str, year: int) -> datetime | None:
+def _parse_date(line: str, default_year: int) -> datetime | None:
     m = DATE_RE.match(_clean(line).lower())
     if not m:
         return None
-    day, month, hour, minute = m.groups()
+    day, month, explicit_year, hour, minute = m.groups()
     try:
-        return datetime(year, MONTHS[month], int(day), int(hour), int(minute))
+        return datetime(
+            int(explicit_year or default_year),
+            MONTHS[month],
+            int(day),
+            int(hour),
+            int(minute),
+        )
     except ValueError:
         return None
 
 
 def _price(text: str) -> str | None:
-    m = re.search(r"\d[\d\s]*(?:-|–)\s*\d[\d\s]*\s*грн|\d[\d\s]*\s*грн|від\s*\d[\d\s]*\s*(?:₴|грн)", text, re.I)
+    m = re.search(
+        r"\d[\d\s]*(?:-|–)\s*\d[\d\s]*\s*грн|\d[\d\s]*\s*грн|від\s*\d[\d\s]*\s*(?:₴|грн)",
+        text,
+        re.I,
+    )
     return _clean(m.group(0)) if m else None
 
 
@@ -81,13 +94,21 @@ def collect_line_catalog(urls: list[str], timeout: float = 20.0) -> list[RawEven
                 if not start or start < now:
                     continue
 
-                # The source layout is: date/time -> type tags -> title -> city -> venue -> price/status.
                 window = lines[i + 1:i + 12]
                 city_index = next((j for j, x in enumerate(window) if x.startswith("Тернопіль")), None)
                 if city_index is None:
                     continue
                 before_city = window[:city_index]
-                title = next((x for x in reversed(before_city) if len(x) > 2 and x.lower() not in {"театр", "концерт", "спорт", "клуб", "цирк", "дітям", "балет", "розваги", "відпочинок"}), None)
+                title = next(
+                    (
+                        x for x in reversed(before_city)
+                        if len(x) > 2 and x.lower() not in {
+                            "театр", "концерт", "спорт", "клуб", "цирк",
+                            "дітям", "балет", "розваги", "відпочинок",
+                        }
+                    ),
+                    None,
+                )
                 if not title:
                     continue
                 after_city = window[city_index + 1:]
