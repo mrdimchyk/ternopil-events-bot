@@ -5,7 +5,9 @@ from app.services.source_runs import finish_run, start_run
 
 
 def main() -> None:
+    # Ensure the PostgreSQL schema exists before any collector runs.
     init_db()
+
     totals = {"collected": 0, "changed": 0, "failed": 0}
 
     for source_name, base_url, collect in COLLECTORS:
@@ -27,11 +29,19 @@ def main() -> None:
                 )
             totals["collected"] += len(raw_events)
             totals["changed"] += changed
-            print(f"{source_name}: collected={len(raw_events)} changed={changed}")
+            print(
+                f"{source_name}: collected={len(raw_events)} "
+                f"changed={changed}"
+            )
         except Exception as exc:
             with SessionLocal() as session:
                 run = session.get(type(run), run.id)
-                finish_run(session, run, status="error", error_text=str(exc))
+                finish_run(
+                    session,
+                    run,
+                    status="error",
+                    error_text=str(exc),
+                )
             totals["failed"] += 1
             print(f"{source_name}: ERROR {exc}")
 
@@ -39,6 +49,14 @@ def main() -> None:
         f"TOTAL: collected={totals['collected']} "
         f"changed={totals['changed']} failed={totals['failed']}"
     )
+
+    # A green scheduled run must mean that every configured source completed.
+    # Partial failures are therefore surfaced to GitHub Actions instead of
+    # being hidden behind a successful process exit code.
+    if totals["failed"]:
+        raise RuntimeError(
+            f"Collection completed with {totals['failed']} failed source(s)."
+        )
 
 
 if __name__ == "__main__":
