@@ -1,10 +1,15 @@
-from app.collectors.karabas import collect, BASE_URL
+from app.collectors.karabas import BASE_URL, collect
 from app.db.session import SessionLocal, init_db
 from app.services.events import upsert_events
 
-if __name__ == "__main__":
+
+def main() -> None:
     init_db()
-    events = collect()
+    raw_events = collect()
     with SessionLocal() as session:
-        inserted = upsert_events(session, events, "KARABAS", BASE_URL)
-    print(f"Collected: {len(events)}; inserted/updated: {inserted}")
+        created = upsert_events(session, raw_events, "KARABAS", BASE_URL)
+    print(f"KARABAS: collected={len(raw_events)} created={created}")
+
+
+if __name__ == "__main__":
+    main()
