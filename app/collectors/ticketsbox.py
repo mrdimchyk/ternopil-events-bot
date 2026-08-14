@@ -2,6 +2,7 @@ from datetime import datetime
 
 from app.collectors.line_catalog import collect_line_catalog
 
+SOURCE_NAME = "TicketsBox"
 BASE_URL = "https://ternopil.ticketsbox.com/"
 _MONTH_SLUGS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
