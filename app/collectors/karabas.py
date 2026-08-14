@@ -31,18 +31,32 @@ def _id(url: str, title: str, start: datetime) -> str:
 
 def _parse_start(block: str) -> datetime | None:
     date_match = re.search(
-        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})",
+        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})?",
         block,
         re.I,
     )
     if not date_match:
         return None
+
     day, month, year = date_match.groups()
-    time_match = re.search(r"Тернопіль,.*?(\d{1,2}):(\d{2})", block, re.I | re.S)
-    if not time_match:
+    year_value = int(year) if year else datetime.now().year
+
+    # Karabas has used both `Тернопіль, ... 19:00` and `19:00 ... Тернопіль` layouts.
+    time_matches = list(re.finditer(r"\b(\d{1,2}):(\d{2})\b", block))
+    if not time_matches:
         return None
+    time_match = next(
+        (m for m in time_matches if m.start() > date_match.end()),
+        time_matches[0],
+    )
     try:
-        return datetime(int(year), MONTHS[month.lower()], int(day), int(time_match.group(1)), int(time_match.group(2)))
+        return datetime(
+            year_value,
+            MONTHS[month.lower()],
+            int(day),
+            int(time_match.group(1)),
+            int(time_match.group(2)),
+        )
     except ValueError:
         return None
 
@@ -71,8 +85,6 @@ def collect(timeout: float = 30.0):
 
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
         for source_url in urls:
-            # Direct Karabas requests from GitHub-hosted runners receive 403.
-            # Jina Reader fetches the public page and returns rendered text.
             response = client.get(
                 JINA_PREFIX + source_url,
                 headers={**headers, "x-no-cache": "true"},
@@ -81,13 +93,13 @@ def collect(timeout: float = 30.0):
             text = response.text
 
             matches = list(re.finditer(
-                rf"(?m)^\s*(\d{{1,2}})\s+[^\n]*?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s*$",
+                rf"(?m)^\s*(\d{{1,2}})\s+[^\n]*?({MONTH_PATTERN})(?:\s*[’']?\s*(20\d{{2}}))?[^\n]*$",
                 text,
                 re.I,
             ))
             for pos, match in enumerate(matches):
                 block = text[match.start():matches[pos + 1].start() if pos + 1 < len(matches) else len(text)]
-                if "Тернопіль," not in block:
+                if "Тернопіль" not in block:
                     continue
                 if re.search(r"\b(Скасовано|Перенесено|Cancelled|Transferred)\b", block, re.I):
                     continue
@@ -96,14 +108,17 @@ def collect(timeout: float = 30.0):
                     continue
 
                 lines = [_clean(x.strip("#*- ")) for x in block.splitlines() if _clean(x.strip("#*- "))]
-                city_line = next((i for i, x in enumerate(lines) if x.startswith("Тернопіль,")), None)
+                city_line = next((i for i, x in enumerate(lines) if x.startswith("Тернопіль")), None)
                 if city_line is None:
                     continue
                 ignored = {
                     "концерти", "театри", "фестивалі", "клуби", "інші",
                     "concerts", "theatres", "festivals", "clubs", "other",
                 }
-                title = next((line for line in lines[1:city_line] if line.lower() not in ignored and len(line) > 2), None)
+                title = next(
+                    (line for line in lines[1:city_line] if line.lower() not in ignored and len(line) > 2),
+                    None,
+                )
                 if not title:
                     continue
                 venue = lines[city_line + 1] if city_line + 1 < len(lines) else None
