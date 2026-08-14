@@ -25,8 +25,27 @@ def _clean(s: str) -> str:
     return " ".join(s.replace("\xa0", " ").split()).strip()
 
 
-def _id(url: str, title: str, start: datetime) -> str:
+def _external_id(url: str, title: str, start: datetime) -> str:
     return hashlib.sha256(f"{url}|{title}|{start.isoformat()}".encode()).hexdigest()[:32]
+
+
+def _id(url: str, title: str, start: datetime) -> str:
+    return _external_id(url, title, start)
+
+
+def _parse_date_time(value: str) -> datetime | None:
+    match = re.search(
+        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s+(\d{{1,2}}):(\d{{2}})",
+        value,
+        re.I,
+    )
+    if not match:
+        return None
+    day, month, year, hour, minute = match.groups()
+    try:
+        return datetime(int(year), MONTHS[month.lower()], int(day), int(hour), int(minute))
+    except ValueError:
+        return None
 
 
 def _parse_start(block: str) -> datetime | None:
@@ -40,15 +59,10 @@ def _parse_start(block: str) -> datetime | None:
 
     day, month, year = date_match.groups()
     year_value = int(year) if year else datetime.now().year
-
-    # Karabas has used both `Тернопіль, ... 19:00` and `19:00 ... Тернопіль` layouts.
     time_matches = list(re.finditer(r"\b(\d{1,2}):(\d{2})\b", block))
     if not time_matches:
         return None
-    time_match = next(
-        (m for m in time_matches if m.start() > date_match.end()),
-        time_matches[0],
-    )
+    time_match = next((m for m in time_matches if m.start() > date_match.end()), time_matches[0])
     try:
         return datetime(
             year_value,
@@ -115,16 +129,13 @@ def collect(timeout: float = 30.0):
                     "концерти", "театри", "фестивалі", "клуби", "інші",
                     "concerts", "theatres", "festivals", "clubs", "other",
                 }
-                title = next(
-                    (line for line in lines[1:city_line] if line.lower() not in ignored and len(line) > 2),
-                    None,
-                )
+                title = next((line for line in lines[1:city_line] if line.lower() not in ignored and len(line) > 2), None)
                 if not title:
                     continue
                 venue = lines[city_line + 1] if city_line + 1 < len(lines) else None
                 price = _price(block)
                 event = RawEvent(
-                    external_id=_id(source_url, title, start),
+                    external_id=_external_id(source_url, title, start),
                     title=title,
                     category="concert" if "концерт" in block.lower() else ("theatre" if "театр" in block.lower() else None),
                     start_at=start,
