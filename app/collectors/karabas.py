@@ -1,6 +1,8 @@
 import hashlib
+import os
 import re
 from datetime import datetime
+from pathlib import Path
 
 import httpx
 from bs4 import BeautifulSoup
@@ -10,6 +12,7 @@ from app.collectors.base import RawEvent
 BASE_URL = "https://ternopil.karabas.com/"
 SOURCE_NAME = "KARABAS"
 JINA_PREFIX = "https://r.jina.ai/"
+DEBUG_DIR = Path("artifacts/karabas")
 MONTHS = {
     "січня": 1,
     "лютого": 2,
@@ -120,13 +123,7 @@ def _event_blocks(lines: list[str]) -> list[list[str]]:
 
 
 def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawEvent]:
-    """Extract KARABAS event cards from their stable semantic field order.
-
-    The current month page exposes each card as:
-    date heading -> title -> category -> location/date/time -> venue -> price/status -> buy.
-    We intentionally parse those fields independently instead of applying regexes to
-    the whole card, so a time such as 18:00 can never leak into the price field.
-    """
+    """Extract KARABAS event cards from their stable semantic field order."""
     lines = [_clean(x.strip("#*- ")) for x in text.splitlines() if _clean(x.strip("#*- "))]
     events: list[RawEvent] = []
 
@@ -196,12 +193,10 @@ def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawE
 
 
 def _extract_events(text: str, source_url: str, now: datetime) -> list[RawEvent]:
-    """Compatibility wrapper for the collector/test API."""
     return _extract_event_cards(text, source_url, now)
 
 
 def _month_urls(now: datetime) -> list[str]:
-    """Current month plus five following KARABAS public calendar pages."""
     urls: list[str] = []
     for offset in range(6):
         month_index = now.month - 1 + offset
@@ -211,15 +206,21 @@ def _month_urls(now: datetime) -> list[str]:
 
 
 def _get_page(client: httpx.Client, url: str, timeout: float) -> str:
-    """Prefer Jina Reader because KARABAS blocks GitHub Actions with HTTP 403."""
     try:
         response = client.get(JINA_PREFIX + url, timeout=timeout)
         response.raise_for_status()
-        return response.text
+        text = response.text
     except httpx.HTTPError:
         response = client.get(url, timeout=timeout)
         response.raise_for_status()
-        return response.text
+        text = response.text
+
+    if os.getenv("KARABAS_DEBUG") == "1":
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        slug = url.rstrip("/").split("/")[-1] or "root"
+        (DEBUG_DIR / f"{slug}.txt").write_text(text, encoding="utf-8")
+
+    return text
 
 
 def collect(timeout: float = 30.0):
