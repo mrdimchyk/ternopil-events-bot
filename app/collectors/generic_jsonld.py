@@ -23,7 +23,18 @@ def _parse_datetime(value: str | None) -> datetime | None:
         return None
 
 
-def collect_jsonld(url: str, timeout: float = 20.0) -> list[RawEvent]:
+def collect_jsonld(
+    url: str,
+    source_name: str | None = None,
+    timeout: float = 20.0,
+) -> list[RawEvent]:
+    """Collect Schema.org Event JSON-LD from a source page.
+
+    ``source_name`` is accepted for compatibility with source-specific
+    collectors; the normalized RawEvent keeps the source identity at the
+    persistence layer.
+    """
+    _ = source_name
     response = httpx.get(
         url,
         headers={"User-Agent": "TernopilEventsBot/0.1"},
@@ -71,18 +82,20 @@ def collect_jsonld(url: str, timeout: float = 20.0) -> list[RawEvent]:
         price_text = f"{price} грн" if price is not None else None
         source_url = urljoin(url, value.get("url") or url)
 
-        result.append(RawEvent(
-            external_id=_id(source_url, str(name), str(start)),
-            title=str(name).strip(),
-            category=None,
-            start_at=_parse_datetime(str(start)),
-            venue=venue,
-            address=address,
-            price_text=price_text,
-            ticket_url=ticket_url,
-            source_url=source_url,
-            description=value.get("description"),
-        ))
+        result.append(
+            RawEvent(
+                external_id=_id(source_url, str(name), str(start)),
+                title=str(name).strip(),
+                category=None,
+                start_at=_parse_datetime(str(start)),
+                venue=venue,
+                address=address,
+                price_text=price_text,
+                ticket_url=ticket_url,
+                source_url=source_url,
+                description=value.get("description"),
+            )
+        )
 
     for script in soup.select('script[type="application/ld+json"]'):
         try:
