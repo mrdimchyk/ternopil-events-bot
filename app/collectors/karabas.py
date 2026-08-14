@@ -11,15 +11,55 @@ BASE_URL = "https://ternopil.karabas.com/"
 SOURCE_NAME = "KARABAS"
 JINA_PREFIX = "https://r.jina.ai/"
 MONTHS = {
-    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5,
-    "червня": 6, "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10,
-    "листопада": 11, "грудня": 12,
+    "січня": 1,
+    "лютого": 2,
+    "березня": 3,
+    "квітня": 4,
+    "травня": 5,
+    "червня": 6,
+    "липня": 7,
+    "серпня": 8,
+    "вересня": 9,
+    "жовтня": 10,
+    "листопада": 11,
+    "грудня": 12,
 }
 MONTH_SLUGS = [
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
 ]
 MONTH_PATTERN = "|".join(MONTHS)
+CATEGORY_LABELS = {
+    "концерти",
+    "театри",
+    "дітям",
+    "stand-up",
+    "клуби",
+    "фестивалі",
+    "інші",
+}
+DATE_HEADING_RE = re.compile(
+    rf"^\d{{1,2}}\s+.*?({MONTH_PATTERN}).*?20\d{{2}}\s*$",
+    re.I,
+)
+LOCATION_RE = re.compile(
+    rf"^Тернопіль,\s*\d{{1,2}}\s+({MONTH_PATTERN})\s+20\d{{2}},\s*\d{{1,2}}:\d{{2}}$",
+    re.I,
+)
+PRICE_RE = re.compile(
+    r"^(?:\d[\d\s]*(?:-|–)\s*\d[\d\s]*|\d[\d\s]*)\s*(?:грн|UAH)$",
+    re.I,
+)
 
 
 def _clean(s: str) -> str:
@@ -35,7 +75,7 @@ def _id(url: str, title: str, start: datetime) -> str:
 
 
 def _parse_date_time(value: str) -> datetime | None:
-    """Parse the date/time formats used by KARABAS month and root pages."""
+    """Parse date/time formats used by KARABAS month and event-location lines."""
     patterns = (
         rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
         rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
@@ -57,100 +97,107 @@ def _parse_date_time(value: str) -> datetime | None:
     return None
 
 
-def _parse_start(block: str) -> datetime | None:
-    """Parse the event date first, then find the event time anywhere in its block."""
-    date_match = re.search(
-        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})?",
-        block,
-        re.I,
-    )
-    if not date_match:
-        return None
-
-    day, month, year = date_match.groups()
-    year_value = int(year) if year else datetime.now().year
-    time_matches = list(re.finditer(r"\b(\d{1,2}):(\d{2})\b", block))
-    if not time_matches:
-        return None
-    time_match = next(
-        (m for m in time_matches if m.start() > date_match.end()),
-        time_matches[0],
-    )
-    try:
-        return datetime(
-            year_value,
-            MONTHS[month.lower()],
-            int(day),
-            int(time_match.group(1)),
-            int(time_match.group(2)),
-        )
-    except ValueError:
-        return None
-
-
-def _price(s: str) -> str | None:
-    m = re.search(
-        r"\d[\d\s]*(?:-|–)\s*\d[\d\s]*\s*(?:грн|UAH)|\d[\d\s]*\s*(?:грн|UAH)",
-        s,
-        re.I,
-    )
-    return _clean(m.group(0)) if m else None
-
-
 def _is_date_heading(line: str) -> bool:
-    return bool(re.search(rf"^\d{{1,2}}\s+.*?({MONTH_PATTERN}).*?20\d{{2}}\s*$", line, re.I))
+    return bool(DATE_HEADING_RE.search(line))
 
 
-def _extract_events(text: str, source_url: str, now: datetime) -> list[RawEvent]:
-    lines = [_clean(x.strip("#*- ")) for x in text.splitlines() if _clean(x.strip("#*- "))]
+def _is_category_line(line: str) -> bool:
+    parts = [_clean(part).lower() for part in line.split("|")]
+    return bool(parts) and all(part in CATEGORY_LABELS for part in parts)
+
+
+def _parse_price_line(line: str) -> str | None:
+    return _clean(line) if PRICE_RE.fullmatch(_clean(line)) else None
+
+
+def _event_blocks(lines: list[str]) -> list[list[str]]:
     date_indices = [i for i, line in enumerate(lines) if _is_date_heading(line)]
-    events: list[RawEvent] = []
-
+    blocks: list[list[str]] = []
     for pos, idx in enumerate(date_indices):
         end = date_indices[pos + 1] if pos + 1 < len(date_indices) else len(lines)
-        block_lines = lines[idx:end]
-        block = " ".join(block_lines)
-        if "Тернопіль" not in block:
+        blocks.append(lines[idx:end])
+    return blocks
+
+
+def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawEvent]:
+    """Extract KARABAS event cards from their stable semantic field order.
+
+    The current month page exposes each card as:
+    date heading -> title -> category -> location/date/time -> venue -> price/status -> buy.
+    We intentionally parse those fields independently instead of applying regexes to
+    the whole card, so a time such as 18:00 can never leak into the price field.
+    """
+    lines = [_clean(x.strip("#*- ")) for x in text.splitlines() if _clean(x.strip("#*- "))]
+    events: list[RawEvent] = []
+
+    for block_lines in _event_blocks(lines):
+        location_idx = next(
+            (i for i, line in enumerate(block_lines) if LOCATION_RE.fullmatch(line)),
+            None,
+        )
+        if location_idx is None or location_idx < 2:
             continue
-        if re.search(r"\b(Скасовано|Перенесено|Cancelled|Transferred|Продано)\b", block, re.I):
-            continue
-        start = _parse_start(block)
+
+        start = _parse_date_time(block_lines[location_idx])
         if not start or start < now:
             continue
 
-        city_idx = next(
-            (j for j, x in enumerate(block_lines)
-             if re.search(r"^Тернопіль(?:,|\s|$)", x, re.I)),
+        title_candidates = [
+            line
+            for line in block_lines[1:location_idx]
+            if not _is_category_line(line)
+        ]
+        if not title_candidates:
+            continue
+        title = title_candidates[-1]
+
+        category_line = next(
+            (line for line in block_lines[1:location_idx] if _is_category_line(line)),
             None,
         )
-        if city_idx is None:
-            continue
+        category = None
+        if category_line:
+            category_lower = category_line.lower()
+            if "концерт" in category_lower:
+                category = "concert"
+            elif "театр" in category_lower:
+                category = "theatre"
+            elif "stand-up" in category_lower:
+                category = "standup"
 
-        ignored = {"концерти", "театри", "фестивалі", "клуби", "інші"}
-        title = next(
-            (
-                x for x in reversed(block_lines[1:city_idx])
-                if len(x) > 2 and x.lower() not in ignored and not _is_date_heading(x)
-            ),
-            None,
+        venue = block_lines[location_idx + 1] if location_idx + 1 < len(block_lines) else None
+        status_or_price = (
+            block_lines[location_idx + 2] if location_idx + 2 < len(block_lines) else None
         )
-        if not title:
+        if status_or_price and re.search(
+            r"\b(Скасовано|Перенесено|Cancelled|Transferred|Продано)\b",
+            status_or_price,
+            re.I,
+        ):
             continue
+        price_text = _parse_price_line(status_or_price) if status_or_price else None
 
-        venue = block_lines[city_idx + 1] if city_idx + 1 < len(block_lines) else None
-        events.append(RawEvent(
-            external_id=_external_id(source_url, title, start),
-            title=title,
-            category="concert" if "концерт" in block.lower() else ("theatre" if "театр" in block.lower() else None),
-            start_at=start,
-            venue=venue,
-            address=None,
-            price_text=_price(block),
-            ticket_url=source_url,
-            source_url=source_url,
-            description=None,
-        ))
+        events.append(
+            RawEvent(
+                external_id=_external_id(source_url, title, start),
+                title=title,
+                category=category,
+                start_at=start,
+                venue=venue,
+                address=None,
+                price_text=price_text,
+                ticket_url=source_url,
+                source_url=source_url,
+                description=None,
+            )
+        )
+
     return list({e.external_id: e for e in events}.values())
+
+
+def _extract_events(text: str, source_url: str, now: datetime) -> list[RawEvent]:
+    """Compatibility wrapper for the collector/test API."""
+    return _extract_event_cards(text, source_url, now)
 
 
 def _month_urls(now: datetime) -> list[str]:
@@ -195,6 +242,6 @@ def collect(timeout: float = 30.0):
                 soup = BeautifulSoup(text, "lxml")
                 text = "\n".join(_clean(x) for x in soup.stripped_strings if _clean(x))
 
-            events.extend(_extract_events(text, url, now))
+            events.extend(_extract_event_cards(text, url, now))
 
     return list({e.external_id: e for e in events}.values())
