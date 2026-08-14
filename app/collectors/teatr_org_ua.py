@@ -1,5 +1,6 @@
 from app.collectors.line_catalog import collect_line_catalog
 
+SOURCE_NAME = "Teatr.org.ua"
 BASE_URL = "https://teatr.org.ua/cities/ternopil"
 
 
