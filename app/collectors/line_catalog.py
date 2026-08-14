@@ -15,9 +15,14 @@ MONTHS = {
 }
 MONTH_RE = "|".join(MONTHS)
 DATE_RE = re.compile(
-    rf"^(\d{{1,2}})\s+({MONTH_RE})\s+(?:(20\d{{2}})\s*,?\s*)?(\d{{1,2}}):(\d{{2}})\b",
+    rf"^(\d{{1,2}})\s+({MONTH_RE})\s+(?:(20\d{{2}})\s*[,—-]?\s*)?(\d{{1,2}}):(\d{{2}})\b",
     re.I,
 )
+DATE_ANY_RE = re.compile(
+    rf"\b(\d{{1,2}})\s+({MONTH_RE})\s+(?:(20\d{{2}})\s*[,—-]?\s*)?(\d{{1,2}}):(\d{{2}})\b",
+    re.I,
+)
+JINA_PREFIX = "https://r.jina.ai/"
 
 
 def _clean(value: str) -> str:
@@ -29,18 +34,13 @@ def _event_id(url: str, title: str, start: datetime) -> str:
 
 
 def _parse_date(line: str, default_year: int) -> datetime | None:
-    m = DATE_RE.match(_clean(line).lower())
+    value = _clean(line).lower()
+    m = DATE_RE.match(value) or DATE_ANY_RE.search(value)
     if not m:
         return None
     day, month, explicit_year, hour, minute = m.groups()
     try:
-        return datetime(
-            int(explicit_year or default_year),
-            MONTHS[month],
-            int(day),
-            int(hour),
-            int(minute),
-        )
+        return datetime(int(explicit_year or default_year), MONTHS[month], int(day), int(hour), int(minute))
     except ValueError:
         return None
 
@@ -71,6 +71,49 @@ def _category(lines: list[str]) -> str | None:
     return None
 
 
+def _parse_lines(lines: list[str], page_url: str, year: int, now: datetime) -> list[RawEvent]:
+    events: dict[str, RawEvent] = {}
+    date_indices = [i for i, line in enumerate(lines) if _parse_date(line, year)]
+    for pos, i in enumerate(date_indices):
+        start = _parse_date(lines[i], year)
+        if not start or start < now:
+            continue
+        window = lines[i + 1:i + 20]
+        city_index = next((j for j, x in enumerate(window) if re.search(r"^Тернопіль(?:,|\s|$)", x, re.I)), None)
+        if city_index is None:
+            continue
+        before_city = window[:city_index]
+        ignored = {"театр", "концерт", "спорт", "клуб", "цирк", "дітям", "балет", "розваги", "відпочинок", "театри", "концерти"}
+        title = next((x for x in reversed(before_city) if len(x) > 2 and x.lower() not in ignored), None)
+        if not title:
+            continue
+        block = " ".join(window)
+        if re.search(r"ПОДІЯ\s+(ЗАКІНЧИЛАСЬ|ЗАКІНЧИЛАСЯ)|EVENT\s+ENDED|Скасовано|Перенесено", block, re.I):
+            continue
+        after_city = window[city_index + 1:]
+        if after_city and after_city[0] == "•":
+            after_city = after_city[1:]
+        venue = after_city[0] if after_city else None
+        href = None
+        for a in page_url[0] if False else []:
+            _ = a
+        source_url = page_url
+        event = RawEvent(
+            external_id=_event_id(source_url, title, start),
+            title=title,
+            category=_category(window),
+            start_at=start,
+            venue=venue,
+            address=None,
+            price_text=_price(block),
+            ticket_url=source_url,
+            source_url=source_url,
+            description=None,
+        )
+        events[event.external_id] = event
+    return list(events.values())
+
+
 def collect_line_catalog(urls: list[str], timeout: float = 20.0) -> list[RawEvent]:
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36",
@@ -78,7 +121,6 @@ def collect_line_catalog(urls: list[str], timeout: float = 20.0) -> list[RawEven
     }
     now = datetime.now()
     events: dict[str, RawEvent] = {}
-
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
         for page_url in urls:
             response = client.get(page_url)
@@ -88,55 +130,12 @@ def collect_line_catalog(urls: list[str], timeout: float = 20.0) -> list[RawEven
             page_text = " ".join(lines)
             year_match = re.search(r"\b20\d{2}\b", page_text)
             year = int(year_match.group()) if year_match else now.year
-
-            for i, line in enumerate(lines):
-                start = _parse_date(line, year)
-                if not start or start < now:
-                    continue
-
-                window = lines[i + 1:i + 12]
-                city_index = next((j for j, x in enumerate(window) if x.startswith("Тернопіль")), None)
-                if city_index is None:
-                    continue
-                before_city = window[:city_index]
-                title = next(
-                    (
-                        x for x in reversed(before_city)
-                        if len(x) > 2 and x.lower() not in {
-                            "театр", "концерт", "спорт", "клуб", "цирк",
-                            "дітям", "балет", "розваги", "відпочинок",
-                        }
-                    ),
-                    None,
-                )
-                if not title:
-                    continue
-                after_city = window[city_index + 1:]
-                if after_city and after_city[0] == "•":
-                    after_city = after_city[1:]
-                venue = after_city[0] if after_city else None
-                joined = " ".join(window)
-                if re.search(r"ПОДІЯ\s+(ЗАКІНЧИЛАСЬ|ЗАКІНЧИЛАСЯ)|EVENT\s+ENDED", joined, re.I):
-                    continue
-                price = _price(joined)
-                href = None
-                for a in soup.select("a[href]"):
-                    if _clean(a.get_text(" ", strip=True)) == title:
-                        href = urljoin(page_url, a.get("href"))
-                        break
-                source_url = href or page_url
-                event = RawEvent(
-                    external_id=_event_id(source_url, title, start),
-                    title=title,
-                    category=_category(window),
-                    start_at=start,
-                    venue=venue,
-                    address=None,
-                    price_text=price,
-                    ticket_url=source_url,
-                    source_url=source_url,
-                    description=None,
-                )
+            parsed = _parse_lines(lines, page_url, year, now)
+            if not parsed:
+                jina = client.get(JINA_PREFIX + page_url, headers={**headers, "x-no-cache": "true"})
+                jina.raise_for_status()
+                jlines = [_clean(x.strip("#*- ")) for x in jina.text.splitlines() if _clean(x.strip("#*- "))]
+                parsed = _parse_lines(jlines, page_url, year, now)
+            for event in parsed:
                 events[event.external_id] = event
-
     return list(events.values())
