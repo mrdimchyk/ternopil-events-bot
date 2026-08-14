@@ -13,6 +13,7 @@ class Source(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True)
     base_url: Mapped[str] = mapped_column(String(500))
     events = relationship("Event", back_populates="source")
+    runs = relationship("SourceRun", back_populates="source", cascade="all, delete-orphan")
 
 
 class Venue(Base):
@@ -63,3 +64,18 @@ class EventChange(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
 
     event = relationship("Event", back_populates="changes")
+
+
+class SourceRun(Base):
+    __tablename__ = "source_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="running", index=True)
+    collected_count: Mapped[int] = mapped_column(Integer, default=0)
+    changed_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    source = relationship("Source", back_populates="runs")
