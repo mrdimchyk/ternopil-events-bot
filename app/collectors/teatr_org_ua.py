@@ -1,8 +1,7 @@
-from app.collectors.html_catalog import collect_html
+from app.collectors.line_catalog import collect_line_catalog
 
 BASE_URL = "https://teatr.org.ua/cities/ternopil"
-SOURCE_NAME = "Teatr.org.ua"
 
 
 def collect(timeout: float = 20.0):
-    return collect_html([BASE_URL], timeout=timeout, min_future=True)
+    return collect_line_catalog([BASE_URL], timeout=timeout)
