@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from app.db.session import SessionLocal
-from app.services.notifications import tomorrow_events, users_for_tomorrow
+from app.services.notifications import tomorrow_events
 
 
 def build_tomorrow_digest(now: datetime | None = None) -> str:
