@@ -9,6 +9,9 @@ CATALOG_URLS = [
     f"{BASE_URL}concert/",
     f"{BASE_URL}theater/",
     f"{BASE_URL}razvlecheniya/",
+    f"{BASE_URL}circus/",
+    f"{BASE_URL}interaktivnij-zahid/",
+    f"{BASE_URL}kultura-i-iskusstvo/",
     f"{BASE_URL}football/",
 ]
 
