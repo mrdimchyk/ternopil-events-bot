@@ -7,6 +7,7 @@ import httpx
 from app.collectors.base import RawEvent
 
 BASE_URL = "https://ternopil.karabas.com/"
+SOURCE_NAME = "KARABAS"
 JINA_PREFIX = "https://r.jina.ai/"
 MONTH_SLUGS = [
     "january", "february", "march", "april", "may", "june",
