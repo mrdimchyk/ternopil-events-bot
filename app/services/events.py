@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from app.collectors.base import RawEvent
 from app.db.models import Event, EventChange, Source, Venue
+from app.services.event_identity import make_group_key
 
 
 def _record_change(session, event_id: int, change_type: str, field_name: str | None = None,
@@ -41,9 +42,12 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
                 session.add(venue)
                 session.flush()
 
+        group_key = make_group_key(raw.title, raw.start_at, raw.venue)
+
         if event is None:
             event = Event(
                 external_id=raw.external_id,
+                group_key=group_key,
                 source_id=source.id,
                 title=raw.title,
                 category=raw.category,
@@ -63,6 +67,7 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
             continue
 
         tracked = {
+            "group_key": (event.group_key, group_key),
             "title": (event.title, raw.title),
             "category": (event.category, raw.category),
             "start_at": (event.start_at, raw.start_at),
@@ -76,6 +81,9 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
             if old_text == new_text:
                 continue
 
+            if field_name == "group_key":
+                setattr(event, field_name, new)
+                continue
             if field_name == "ticket_url":
                 if not old and new:
                     _record_change(session, event.id, "ticket_sale_started", field_name, old_text, new_text)
