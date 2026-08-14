@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 
 import httpx
+from bs4 import BeautifulSoup
 
 from app.collectors.base import RawEvent
 
@@ -103,6 +104,14 @@ def collect(timeout: float = 30.0):
         "Accept": "text/plain,text/markdown,text/html;q=0.9,*/*;q=0.8",
     }
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
-        response = client.get(JINA_PREFIX + BASE_URL, headers={**headers, "x-no-cache": "true"})
+        response = client.get(BASE_URL)
         response.raise_for_status()
-        return _extract_events(response.text, BASE_URL, now)
+        soup = BeautifulSoup(response.text, "lxml")
+        lines = [_clean(x) for x in soup.stripped_strings if _clean(x)]
+        events = _extract_events("\n".join(lines), BASE_URL, now)
+        if events:
+            return events
+
+        jina = client.get(JINA_PREFIX + BASE_URL, headers={**headers, "x-no-cache": "true"})
+        jina.raise_for_status()
+        return _extract_events(jina.text, BASE_URL, now)
