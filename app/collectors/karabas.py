@@ -9,10 +9,6 @@ from app.collectors.base import RawEvent
 BASE_URL = "https://ternopil.karabas.com/"
 SOURCE_NAME = "KARABAS"
 JINA_PREFIX = "https://r.jina.ai/"
-MONTH_SLUGS = [
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
-]
 MONTHS = {
     "січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5,
     "червня": 6, "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10,
@@ -35,7 +31,7 @@ def _id(url: str, title: str, start: datetime) -> str:
 
 def _parse_date_time(value: str) -> datetime | None:
     match = re.search(
-        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s+(\d{{1,2}}):(\d{{2}})",
+        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
         value,
         re.I,
     )
@@ -49,103 +45,59 @@ def _parse_date_time(value: str) -> datetime | None:
 
 
 def _parse_start(block: str) -> datetime | None:
-    date_match = re.search(
-        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})?",
-        block,
-        re.I,
-    )
-    if not date_match:
-        return None
-
-    day, month, year = date_match.groups()
-    year_value = int(year) if year else datetime.now().year
-    time_matches = list(re.finditer(r"\b(\d{1,2}):(\d{2})\b", block))
-    if not time_matches:
-        return None
-    time_match = next((m for m in time_matches if m.start() > date_match.end()), time_matches[0])
-    try:
-        return datetime(
-            year_value,
-            MONTHS[month.lower()],
-            int(day),
-            int(time_match.group(1)),
-            int(time_match.group(2)),
-        )
-    except ValueError:
-        return None
+    return _parse_date_time(block)
 
 
 def _price(s: str) -> str | None:
-    m = re.search(
-        r"\d[\d\s]*(?:-|–)\s*\d[\d\s]*\s*(?:грн|UAH)|\d[\d\s]*\s*(?:грн|UAH)",
-        s,
-        re.I,
-    )
+    m = re.search(r"\d[\d\s]*(?:-|–)\s*\d[\d\s]*\s*(?:грн|UAH)|\d[\d\s]*\s*(?:грн|UAH)", s, re.I)
     return _clean(m.group(0)) if m else None
+
+
+def _extract_events(text: str, source_url: str, now: datetime) -> list[RawEvent]:
+    lines = [_clean(x.strip("#*- ")) for x in text.splitlines() if _clean(x.strip("#*- "))]
+    date_indices = [i for i, line in enumerate(lines) if _parse_date_time(line)]
+    events: list[RawEvent] = []
+
+    for pos, idx in enumerate(date_indices):
+        start = _parse_date_time(lines[idx])
+        if not start or start < now:
+            continue
+        end = date_indices[pos + 1] if pos + 1 < len(date_indices) else len(lines)
+        block_lines = lines[idx:end]
+        block = " ".join(block_lines)
+        if "Тернопіль" not in block:
+            continue
+        if re.search(r"\b(Скасовано|Перенесено|Cancelled|Transferred|Продано)\b", block, re.I):
+            continue
+        city_idx = next((j for j, x in enumerate(block_lines) if re.search(r"^Тернопіль(?:,|\s|$)", x, re.I)), None)
+        if city_idx is None:
+            continue
+        title = next((x for x in reversed(block_lines[1:city_idx]) if len(x) > 2 and x.lower() not in {"концерти", "театри", "фестивалі", "клуби", "інші"}), None)
+        if not title:
+            continue
+        venue = block_lines[city_idx + 1] if city_idx + 1 < len(block_lines) else None
+        events.append(RawEvent(
+            external_id=_external_id(source_url, title, start),
+            title=title,
+            category="concert" if "концерт" in block.lower() else ("theatre" if "театр" in block.lower() else None),
+            start_at=start,
+            venue=venue,
+            address=None,
+            price_text=_price(block),
+            ticket_url=source_url,
+            source_url=source_url,
+            description=None,
+        ))
+    return events
 
 
 def collect(timeout: float = 30.0):
     now = datetime.now()
-    urls = []
-    for offset in range(6):
-        idx = now.month - 1 + offset
-        urls.append(f"{BASE_URL}{MONTH_SLUGS[idx % 12]}/")
-
     headers = {
         "User-Agent": "TernopilEventsBot/1.0",
         "Accept": "text/plain,text/markdown,text/html;q=0.9,*/*;q=0.8",
     }
-    events: dict[str, RawEvent] = {}
-
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
-        for source_url in urls:
-            response = client.get(
-                JINA_PREFIX + source_url,
-                headers={**headers, "x-no-cache": "true"},
-            )
-            response.raise_for_status()
-            text = response.text
-
-            matches = list(re.finditer(
-                rf"(?m)^\s*(\d{{1,2}})\s+[^\n]*?({MONTH_PATTERN})(?:\s*[’']?\s*(20\d{{2}}))?[^\n]*$",
-                text,
-                re.I,
-            ))
-            for pos, match in enumerate(matches):
-                block = text[match.start():matches[pos + 1].start() if pos + 1 < len(matches) else len(text)]
-                if "Тернопіль" not in block:
-                    continue
-                if re.search(r"\b(Скасовано|Перенесено|Cancelled|Transferred)\b", block, re.I):
-                    continue
-                start = _parse_start(block)
-                if not start or start < now:
-                    continue
-
-                lines = [_clean(x.strip("#*- ")) for x in block.splitlines() if _clean(x.strip("#*- "))]
-                city_line = next((i for i, x in enumerate(lines) if x.startswith("Тернопіль")), None)
-                if city_line is None:
-                    continue
-                ignored = {
-                    "концерти", "театри", "фестивалі", "клуби", "інші",
-                    "concerts", "theatres", "festivals", "clubs", "other",
-                }
-                title = next((line for line in lines[1:city_line] if line.lower() not in ignored and len(line) > 2), None)
-                if not title:
-                    continue
-                venue = lines[city_line + 1] if city_line + 1 < len(lines) else None
-                price = _price(block)
-                event = RawEvent(
-                    external_id=_external_id(source_url, title, start),
-                    title=title,
-                    category="concert" if "концерт" in block.lower() else ("theatre" if "театр" in block.lower() else None),
-                    start_at=start,
-                    venue=venue,
-                    address=None,
-                    price_text=price,
-                    ticket_url=source_url,
-                    source_url=source_url,
-                    description=None,
-                )
-                events[event.external_id] = event
-
-    return list(events.values())
+        response = client.get(JINA_PREFIX + BASE_URL, headers={**headers, "x-no-cache": "true"})
+        response.raise_for_status()
+        return _extract_events(response.text, BASE_URL, now)
