@@ -15,6 +15,7 @@ BASE_URL = "https://teatr.org.ua/cities/ternopil"
 HOME_URL = "https://teatr.org.ua/"
 EVENT_PATH_PREFIX = "/events/"
 TOUR_PATH_PREFIX = "/tours/"
+MONTHS = {"січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5, "червня": 6, "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12}
 
 
 def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
@@ -35,12 +36,8 @@ def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
     return urls
 
 
-def _event_urls(text: str, base_url: str) -> list[str]:
-    return _path_urls(text, base_url, EVENT_PATH_PREFIX)
-
-
-def _tour_urls(text: str, base_url: str) -> list[str]:
-    return _path_urls(text, base_url, TOUR_PATH_PREFIX)
+def _event_urls(text: str, base_url: str) -> list[str]: return _path_urls(text, base_url, EVENT_PATH_PREFIX)
+def _tour_urls(text: str, base_url: str) -> list[str]: return _path_urls(text, base_url, TOUR_PATH_PREFIX)
 
 
 def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
@@ -86,6 +83,37 @@ def _parse_event_page(text: str, page_url: str, now: datetime) -> list[RawEvent]
     return _parse_lines(lines, page_url, now.year, now)
 
 
+def _markdown_city_events(text: str, now: datetime) -> list[RawEvent]:
+    lines = [" ".join(line.strip().split()) for line in text.splitlines() if line.strip()]
+    events: dict[str, RawEvent] = {}
+    date_re = re.compile(r"^(\d{1,2})\s+(" + "|".join(MONTHS) + r")\s+(\d{4}),\s+(\d{1,2}):(\d{2})$")
+    for index, line in enumerate(lines):
+        match = date_re.match(line.lstrip("#*- "))
+        if not match: continue
+        day, month_name, year, hour, minute = match.groups()
+        start = datetime(int(year), MONTHS[month_name], int(day), int(hour), int(minute))
+        if start < now: continue
+        location_index = next((j for j in range(index + 1, min(index + 4, len(lines))) if re.match(r"^Тернопіль(?:,|$)", lines[j], re.I)), None)
+        if location_index is None: continue
+        title = None
+        for candidate in reversed(lines[max(0, index - 4):index]):
+            candidate = candidate.lstrip("#*- ")
+            if candidate and not candidate.startswith("Image:") and candidate not in {"Події у місті", "Вистави та концерти у Тернополі"}:
+                title = candidate
+                break
+        if not title: continue
+        location = lines[location_index]
+        venue = location.split(",", 1)[1].strip() if "," in location else None
+        price = None
+        for candidate in lines[location_index + 1:min(location_index + 3, len(lines))]:
+            price_match = re.search(r"від\s+([0-9\s]+)\s*грн", candidate, re.I)
+            if price_match:
+                price = int(price_match.group(1).replace(" ", "")); break
+        external_id = hashlib.sha256(f"{BASE_URL}|{title}|{start.isoformat()}".encode()).hexdigest()[:32]
+        events[external_id] = RawEvent(external_id=external_id, title=title, category="theatre", start_at=start, venue=venue, address="Тернопіль", price_text=f"від {price} грн" if price is not None else None, ticket_url=BASE_URL, source_url=BASE_URL, description=None)
+    return list(events.values())
+
+
 def _time_attribute_events(text: str, now: datetime) -> list[RawEvent]:
     soup = BeautifulSoup(text, "lxml")
     events: dict[str, RawEvent] = {}
@@ -96,7 +124,7 @@ def _time_attribute_events(text: str, now: datetime) -> list[RawEvent]:
         except ValueError: continue
         if start < now: continue
         card = node
-        for _ in range(6):
+        for _ in range(10):
             if card.parent is None: break
             card = card.parent
             lines = [" ".join(x.split()) for x in card.stripped_strings if " ".join(x.split())]
@@ -114,6 +142,7 @@ def _time_attribute_events(text: str, now: datetime) -> list[RawEvent]:
 def _future_city_events(text: str, now: datetime) -> list[RawEvent]:
     parsed = _parse_event_page(text, BASE_URL, now)
     if not parsed: parsed = _time_attribute_events(text, now)
+    if not parsed: parsed = _markdown_city_events(text, now)
     return [e for e in parsed if e.start_at is not None and e.start_at >= now and (not e.venue or "терноп" in e.venue.lower()) and (not e.address or "терноп" in e.address.lower())]
 
 
