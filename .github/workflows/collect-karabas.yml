@@ -25,11 +25,14 @@ jobs:
       - name: Validate collector registry
         run: python -c "from app.collectors.registry import validate_collectors; validate_collectors()"
 
+      - name: Capture KARABAS production responses
+        continue-on-error: true
+        run: python scripts/diagnose_karabas.py
+
       - name: Collect all sources
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONUNBUFFERED: "1"
-          KARABAS_DEBUG: "1"
         run: python scripts/collect_all.py
 
       - name: Upload KARABAS production responses
@@ -37,5 +40,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: karabas-production-responses
-          path: artifacts/karabas/
-          if-no-files-found: warn
+          path: karabas-production-responses/
+          if-no-files-found: error
