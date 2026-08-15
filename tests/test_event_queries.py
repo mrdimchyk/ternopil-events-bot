@@ -26,8 +26,9 @@ def test_canonical_query_collapses_duplicate_sources_and_keeps_offers():
     result = canonicalize_db_events([first, second, third])
 
     assert len(result) == 2
-    assert len(result[0].sources) == 2
-    assert {source.ticket_url for source in result[0].sources} == {
+    duplicate = next(item for item in result if item.representative.group_key == "same")
+    assert len(duplicate.sources) == 2
+    assert {source.ticket_url for source in duplicate.sources} == {
         "https://karabas.com/1",
         "https://teatr.org.ua/1",
     }
