@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from app.collectors.base import RawEvent
@@ -27,10 +27,18 @@ class CanonicalEvent:
     sources: list[CanonicalSource]
 
 
+def _comparison_time(value: datetime) -> datetime:
+    """Normalize naive/aware datetimes to naive UTC for safe comparison."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _same_event(a: RawEvent, b: RawEvent, time_tolerance_minutes: int = 15) -> bool:
     if a.start_at is None or b.start_at is None:
         return False
-    if abs((a.start_at - b.start_at).total_seconds()) > time_tolerance_minutes * 60:
+    delta = _comparison_time(a.start_at) - _comparison_time(b.start_at)
+    if abs(delta.total_seconds()) > time_tolerance_minutes * 60:
         return False
     return SequenceMatcher(None, normalize_title(a.title), normalize_title(b.title)).ratio() >= 0.90
 
@@ -51,7 +59,11 @@ def build_canonical_events(events_by_source: dict[str, list[RawEvent]]) -> list[
     for cluster in clusters:
         ordered = sorted(cluster, key=lambda item: (len(item[1].title), item[1].title), reverse=True)
         representative = ordered[0][1]
-        start_at = min((event.start_at for _, event in cluster if event.start_at is not None), default=None)
+        start_at = min(
+            (event.start_at for _, event in cluster if event.start_at is not None),
+            key=_comparison_time,
+            default=None,
+        )
         key_basis = make_group_key(representative.title, start_at, representative.venue)
 
         result.append(
