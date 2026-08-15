@@ -5,28 +5,21 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.db.session import SessionLocal
-from app.services.event_queries import (
-    CanonicalDbEvent,
-    canonical_events_for_category,
-    canonical_events_for_range,
-    canonical_events_for_day,
-    category_counts,
-)
+from app.services.event_queries import CanonicalDbEvent, canonical_events_for_category, canonical_events_for_range, canonical_events_for_day, category_counts
 from app.services.event_search import search_canonical_events
 from app.services.favorites import add_favorite, favorite_events, favorite_group_keys, remove_favorite
+from app.services.notifications import notification_group_keys, subscribe_favorite, unsubscribe_favorite
 
 router = Router()
 
 
 def main_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📅 Сьогодні", callback_data="events:today"), InlineKeyboardButton(text="📅 Завтра", callback_data="events:tomorrow")],
-            [InlineKeyboardButton(text="📆 Вихідні", callback_data="events:weekend"), InlineKeyboardButton(text="🎭 Категорії", callback_data="categories")],
-            [InlineKeyboardButton(text="🔎 Пошук", callback_data="search"), InlineKeyboardButton(text="❤️ Обране", callback_data="favorites")],
-            [InlineKeyboardButton(text="🔔 Сповіщення", callback_data="notifications")],
-        ]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📅 Сьогодні", callback_data="events:today"), InlineKeyboardButton(text="📅 Завтра", callback_data="events:tomorrow")],
+        [InlineKeyboardButton(text="📆 Вихідні", callback_data="events:weekend"), InlineKeyboardButton(text="🎭 Категорії", callback_data="categories")],
+        [InlineKeyboardButton(text="🔎 Пошук", callback_data="search"), InlineKeyboardButton(text="❤️ Обране", callback_data="favorites")],
+        [InlineKeyboardButton(text="🔔 Сповіщення", callback_data="notifications")],
+    ])
 
 
 def _day_range(offset: int) -> tuple[datetime, datetime]:
@@ -44,15 +37,16 @@ def _format_event(item: CanonicalDbEvent) -> str:
     return f"🎟️ <b>{event.title}</b>\n🕐 {time}\n{venue}\n{price}"
 
 
-def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str]) -> InlineKeyboardMarkup:
+def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str], notification_keys: set[str]) -> InlineKeyboardMarkup:
     rows = []
     for item in events:
         event = item.representative
         favorite_label = "💛 В обраному" if event.group_key in favorite_keys else "❤️ Додати в обране"
+        notification_label = "🔕 Вимкнути нагадування" if event.group_key in notification_keys else "🔔 Нагадати за 24 год"
         rows.append([InlineKeyboardButton(text=favorite_label, callback_data=f"favorite:{event.group_key}")])
-        offers = [source for source in item.sources if source.ticket_url]
-        for index, source in enumerate(offers, start=1):
-            label = f"🎟️ {event.title[:38]}" if len(offers) == 1 else f"🎟️ {event.title[:32]} — квитки {index}"
+        rows.append([InlineKeyboardButton(text=notification_label, callback_data=f"notify:{event.group_key}")])
+        for index, source in enumerate([s for s in item.sources if s.ticket_url], start=1):
+            label = f"🎟️ {event.title[:38]}" if len(item.sources) == 1 else f"🎟️ {event.title[:32]} — квитки {index}"
             rows.append([InlineKeyboardButton(text=label, url=source.ticket_url)])
     rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -65,11 +59,11 @@ async def _send_events(message: Message, events: list[CanonicalDbEvent], heading
     user_id = message.from_user.id
     with SessionLocal() as session:
         favorite_keys = favorite_group_keys(session, user_id)
-    text = f"📅 <b>{heading}</b>\n\n"
-    text += "\n\n".join(_format_event(item) for item in events[:20])
+        notification_keys = notification_group_keys(session, user_id)
+    text = f"📅 <b>{heading}</b>\n\n" + "\n\n".join(_format_event(item) for item in events[:20])
     if len(events) > 20:
         text += f"\n\n…і ще {len(events) - 20} подій."
-    await message.answer(text, reply_markup=_events_keyboard(events[:20], favorite_keys))
+    await message.answer(text, reply_markup=_events_keyboard(events[:20], favorite_keys, notification_keys))
 
 
 async def _send_day(message: Message, offset: int) -> None:
@@ -176,6 +170,19 @@ async def toggle_favorite(callback: CallbackQuery):
     await callback.answer(text)
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("notify:"))
+async def toggle_notification(callback: CallbackQuery):
+    group_key = callback.data.split(":", 1)[1]
+    with SessionLocal() as session:
+        if group_key in notification_group_keys(session, callback.from_user.id):
+            unsubscribe_favorite(session, callback.from_user.id, group_key)
+            text = "Нагадування вимкнено 🔕"
+        else:
+            subscribe_favorite(session, callback.from_user.id, group_key)
+            text = "Нагадування встановлено на 24 години до події 🔔"
+    await callback.answer(text)
+
+
 @router.callback_query(lambda c: c.data == "favorites")
 async def favorites(callback: CallbackQuery):
     await callback.answer()
@@ -184,12 +191,14 @@ async def favorites(callback: CallbackQuery):
     await _send_events(callback.message, events, "Моє обране")
 
 
+@router.callback_query(lambda c: c.data == "notifications")
+async def notifications(callback: CallbackQuery):
+    await callback.answer()
+    keys = notification_group_keys(SessionLocal(), callback.from_user.id)
+    await callback.message.answer(f"🔔 <b>Сповіщення</b>\n\nАктивних нагадувань: {len(keys)}\n\nНагадування надсилаються за 24 години до обраної події.", reply_markup=main_menu())
+
+
 @router.callback_query(lambda c: c.data == "menu")
 async def menu(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer("Оберіть, що показати:", reply_markup=main_menu())
-
-
-@router.callback_query(lambda c: c.data == "notifications")
-async def notifications(callback: CallbackQuery):
-    await callback.answer("Сповіщення додамо після стабілізації обраного 🚧", show_alert=True)
