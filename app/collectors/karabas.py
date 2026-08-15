@@ -50,7 +50,11 @@ MARKDOWN_LINK_RE = re.compile(r"^\[([^\]]+)\]\(([^)]+)\)$")
 
 
 def _clean(s: str) -> str:
-    return " ".join(s.replace("\xa0", " ").split()).strip()
+    s = s.replace("\xa0", " ")
+    s = re.sub(r"\*\*", "", s)
+    s = re.sub(r"(?<!\w)_(.*?)_(?!\w)", r"\1", s)
+    s = re.sub(r"`([^`]*)`", r"\1", s)
+    return " ".join(s.split()).strip()
 
 
 def _external_id(url: str, title: str, start: datetime) -> str:
@@ -62,6 +66,7 @@ def _id(url: str, title: str, start: datetime) -> str:
 
 
 def _parse_date_time(value: str) -> datetime | None:
+    value = _clean(value)
     patterns = (
         rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
         rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
@@ -84,7 +89,7 @@ def _parse_date_time(value: str) -> datetime | None:
 
 
 def _is_date_heading(line: str) -> bool:
-    return bool(DATE_HEADING_RE.search(line))
+    return bool(DATE_HEADING_RE.search(_clean(line)))
 
 
 def _is_category_line(line: str) -> bool:
@@ -93,7 +98,8 @@ def _is_category_line(line: str) -> bool:
 
 
 def _parse_price_line(line: str) -> str | None:
-    return _clean(line) if PRICE_RE.fullmatch(_clean(line)) else None
+    value = _clean(line)
+    return value if PRICE_RE.fullmatch(value) else None
 
 
 def _event_blocks(lines: list[str]) -> list[list[str]]:
@@ -111,15 +117,21 @@ def _title_and_url(line: str, source_url: str) -> tuple[str, str]:
     return _clean(line), source_url
 
 
+def _label_and_url(line: str, source_url: str) -> tuple[str, str | None]:
+    match = MARKDOWN_LINK_RE.fullmatch(line.strip())
+    if match:
+        return _clean(match.group(1)), urljoin(source_url, match.group(2))
+    return _clean(line), None
+
+
 def _location_start(line: str) -> datetime | None:
-    match = LOCATION_RE.fullmatch(line)
+    match = LOCATION_RE.fullmatch(_clean(line))
     if not match:
         return None
     return _parse_date_time(match.group(1))
 
 
 def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawEvent]:
-    """Extract KARABAS event cards from their stable semantic field order."""
     lines = [_clean(x.strip("#*- ")) for x in text.splitlines() if _clean(x.strip("#*- "))]
     events: list[RawEvent] = []
 
@@ -156,11 +168,12 @@ def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawE
             elif "stand-up" in category_lower:
                 category = "standup"
 
-        venue = block_lines[location_idx + 1] if location_idx + 1 < len(block_lines) else None
+        venue_line = block_lines[location_idx + 1] if location_idx + 1 < len(block_lines) else ""
+        venue, _venue_url = _label_and_url(venue_line, source_url)
         status_or_price = block_lines[location_idx + 2] if location_idx + 2 < len(block_lines) else None
         if status_or_price and re.search(
             r"\b(Скасовано|Перенесено|Cancelled|Transferred|Продано)\b",
-            status_or_price,
+            _clean(status_or_price),
             re.I,
         ):
             continue
