@@ -5,7 +5,13 @@ from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.db.session import SessionLocal
-from app.services.event_queries import CanonicalDbEvent, canonical_events_for_day
+from app.services.event_queries import (
+    CanonicalDbEvent,
+    canonical_events_for_category,
+    canonical_events_for_range,
+    canonical_events_for_day,
+    category_counts,
+)
 
 router = Router()
 
@@ -35,12 +41,6 @@ def _format_event(item: CanonicalDbEvent) -> str:
     return f"🎟️ <b>{event.title}</b>\n🕐 {time}\n{venue}\n{price}"
 
 
-def _events_for_day(offset: int) -> list[CanonicalDbEvent]:
-    start, _ = _day_range(offset)
-    with SessionLocal() as session:
-        return canonical_events_for_day(session, start)
-
-
 def _events_keyboard(events: list[CanonicalDbEvent]) -> InlineKeyboardMarkup:
     rows = []
     for item in events:
@@ -55,17 +55,30 @@ def _events_keyboard(events: list[CanonicalDbEvent]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def _send_day(message: Message, offset: int) -> None:
-    label = "сьогодні" if offset == 0 else "завтра"
-    events = _events_for_day(offset)
+async def _send_events(message: Message, events: list[CanonicalDbEvent], heading: str) -> None:
     if not events:
-        await message.answer(f"📅 <b>{label.capitalize()}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
+        await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
-    text = f"📅 <b>Що цікавого {label} у Тернополі</b>\n\n"
+    text = f"📅 <b>{heading}</b>\n\n"
     text += "\n\n".join(_format_event(item) for item in events[:20])
     if len(events) > 20:
         text += f"\n\n…і ще {len(events) - 20} подій."
     await message.answer(text, reply_markup=_events_keyboard(events[:20]))
+
+
+async def _send_day(message: Message, offset: int) -> None:
+    label = "сьогодні" if offset == 0 else "завтра"
+    start, _ = _day_range(offset)
+    with SessionLocal() as session:
+        events = canonical_events_for_day(session, start)
+    await _send_events(message, events, f"Що цікавого {label} у Тернополі")
+
+
+def _weekend_range() -> tuple[datetime, datetime]:
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    days_to_saturday = (5 - today.weekday()) % 7
+    saturday = today + timedelta(days=days_to_saturday)
+    return saturday, saturday + timedelta(days=2)
 
 
 @router.message(CommandStart())
@@ -79,12 +92,58 @@ async def day_events(callback: CallbackQuery):
     await _send_day(callback.message, 0 if callback.data == "events:today" else 1)
 
 
+@router.callback_query(lambda c: c.data == "events:weekend")
+async def weekend_events(callback: CallbackQuery):
+    await callback.answer()
+    start, end = _weekend_range()
+    with SessionLocal() as session:
+        events = canonical_events_for_range(session, start, end)
+    await _send_events(callback.message, events, "Події цими вихідними у Тернополі")
+
+
+@router.callback_query(lambda c: c.data == "categories")
+async def categories(callback: CallbackQuery):
+    await callback.answer()
+    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=30)
+    with SessionLocal() as session:
+        counts = category_counts(session, start, end)
+    rows = [[InlineKeyboardButton(text=f"🎭 {name} ({count})", callback_data=f"category:{index}")] for index, (name, count) in enumerate(counts[:12])]
+    if counts:
+        _category_cache.clear()
+        _category_cache.update({index: name for index, (name, _) in enumerate(counts[:12])})
+    rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
+    await callback.message.answer("Оберіть категорію на найближчі 30 днів:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+_category_cache: dict[int, str] = {}
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("category:"))
+async def category_events(callback: CallbackQuery):
+    await callback.answer()
+    try:
+        index = int(callback.data.split(":", 1)[1])
+    except ValueError:
+        await callback.message.answer("Не вдалося визначити категорію.", reply_markup=main_menu())
+        return
+    category = _category_cache.get(index)
+    if not category:
+        await callback.message.answer("Категорії оновилися. Відкрийте їх ще раз.", reply_markup=main_menu())
+        return
+    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=30)
+    with SessionLocal() as session:
+        events = canonical_events_for_category(session, category, start, end)
+    await _send_events(callback.message, events, f"{category} — найближчі 30 днів")
+
+
 @router.callback_query(lambda c: c.data == "menu")
 async def menu(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer("Оберіть, що показати:", reply_markup=main_menu())
 
 
-@router.callback_query(lambda c: c.data in {"categories", "favorites", "notifications", "events:weekend"})
+@router.callback_query(lambda c: c.data in {"favorites", "notifications"})
 async def not_implemented(callback: CallbackQuery):
     await callback.answer("Цю функцію додамо на наступному етапі 🚧", show_alert=True)
