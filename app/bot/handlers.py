@@ -13,6 +13,7 @@ from app.services.event_queries import (
     category_counts,
 )
 from app.services.event_search import search_canonical_events
+from app.services.favorites import add_favorite, favorite_events, favorite_group_keys, remove_favorite
 
 router = Router()
 
@@ -43,13 +44,13 @@ def _format_event(item: CanonicalDbEvent) -> str:
     return f"🎟️ <b>{event.title}</b>\n🕐 {time}\n{venue}\n{price}"
 
 
-def _events_keyboard(events: list[CanonicalDbEvent]) -> InlineKeyboardMarkup:
+def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str]) -> InlineKeyboardMarkup:
     rows = []
     for item in events:
         event = item.representative
+        favorite_label = "💛 В обраному" if event.group_key in favorite_keys else "❤️ Додати в обране"
+        rows.append([InlineKeyboardButton(text=favorite_label, callback_data=f"favorite:{event.group_key}")])
         offers = [source for source in item.sources if source.ticket_url]
-        if not offers:
-            continue
         for index, source in enumerate(offers, start=1):
             label = f"🎟️ {event.title[:38]}" if len(offers) == 1 else f"🎟️ {event.title[:32]} — квитки {index}"
             rows.append([InlineKeyboardButton(text=label, url=source.ticket_url)])
@@ -61,11 +62,14 @@ async def _send_events(message: Message, events: list[CanonicalDbEvent], heading
     if not events:
         await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
+    user_id = message.from_user.id
+    with SessionLocal() as session:
+        favorite_keys = favorite_group_keys(session, user_id)
     text = f"📅 <b>{heading}</b>\n\n"
     text += "\n\n".join(_format_event(item) for item in events[:20])
     if len(events) > 20:
         text += f"\n\n…і ще {len(events) - 20} подій."
-    await message.answer(text, reply_markup=_events_keyboard(events[:20]))
+    await message.answer(text, reply_markup=_events_keyboard(events[:20], favorite_keys))
 
 
 async def _send_day(message: Message, offset: int) -> None:
@@ -158,12 +162,34 @@ async def category_events(callback: CallbackQuery):
     await _send_events(callback.message, events, f"{category} — найближчі 30 днів")
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("favorite:"))
+async def toggle_favorite(callback: CallbackQuery):
+    group_key = callback.data.split(":", 1)[1]
+    user_id = callback.from_user.id
+    with SessionLocal() as session:
+        if group_key in favorite_group_keys(session, user_id):
+            remove_favorite(session, user_id, group_key)
+            text = "Видалено з обраного ❤️"
+        else:
+            add_favorite(session, user_id, group_key)
+            text = "Додано в обране 💛"
+    await callback.answer(text)
+
+
+@router.callback_query(lambda c: c.data == "favorites")
+async def favorites(callback: CallbackQuery):
+    await callback.answer()
+    with SessionLocal() as session:
+        events = favorite_events(session, callback.from_user.id, datetime.now())
+    await _send_events(callback.message, events, "Моє обране")
+
+
 @router.callback_query(lambda c: c.data == "menu")
 async def menu(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer("Оберіть, що показати:", reply_markup=main_menu())
 
 
-@router.callback_query(lambda c: c.data in {"favorites", "notifications"})
-async def not_implemented(callback: CallbackQuery):
-    await callback.answer("Цю функцію додамо на наступному етапі 🚧", show_alert=True)
+@router.callback_query(lambda c: c.data == "notifications")
+async def notifications(callback: CallbackQuery):
+    await callback.answer("Сповіщення додамо після стабілізації обраного 🚧", show_alert=True)
