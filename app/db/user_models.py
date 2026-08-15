@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 
@@ -13,6 +13,7 @@ class TelegramUser(Base):
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Kyiv")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    notification_subscriptions = relationship("FavoriteNotification", back_populates="user", cascade="all, delete-orphan")
 
 
 class NotificationPreference(Base):
@@ -36,3 +37,4 @@ class FavoriteNotification(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     last_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    user = relationship("TelegramUser", back_populates="notification_subscriptions")
