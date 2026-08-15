@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base, Event
-from app.db.user_models import FavoriteNotification, TelegramUser
+from app.db.user_models import FavoriteNotification
 from app.services.notifications import due_notifications, subscribe_favorite, unsubscribe_favorite
 
 
