@@ -16,9 +16,9 @@ JINA_PREFIX = "https://r.jina.ai/"
 DEBUG_DIR = Path("artifacts/karabas")
 MONTHS = {"січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5, "червня": 6, "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12}
 MONTH_SLUGS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
-MONTH_PATTERN = "|".join(MONTHS)
+MONTH_PATTERN = "(?:" + "|".join(MONTHS) + ")"
 CATEGORY_LABELS = {"концерти", "театри", "дітям", "stand-up", "клуби", "фестивалі", "інші"}
-DATE_HEADING_RE = re.compile(rf"^\**\d{{1,2}}\**\s+.*?\(?{MONTH_PATTERN}\)?.*?20\d{{2}}\s*$", re.I)
+DATE_HEADING_RE = re.compile(rf"^\**\d{{1,2}}\**\s+.*?{MONTH_PATTERN}.*?20\d{{2}}\s*$", re.I)
 LOCATION_RE = re.compile(rf"^(?:\[)?\*{{0,2}}Тернопіль\*{{0,2}}(?:\]\([^)]*\))?\s*,?\s*(\d{{1,2}}\s+{MONTH_PATTERN}\s+20\d{{2}},\s*\d{{1,2}}:\d{{2}})\s*$", re.I)
 PRICE_RE = re.compile(r"^(?:\d[\d\s]*(?:-|–)\s*\d[\d\s]*|\d[\d\s]*)\s*(?:грн|UAH)$", re.I)
 MARKDOWN_LINK_RE = re.compile(r"^\[([^\]]+)\]\(([^)]+)\)$")
@@ -40,8 +40,8 @@ def _external_id(url: str, title: str, start: datetime) -> str:
 def _parse_date_time(value: str) -> datetime | None:
     value = _clean(value)
     patterns = (
-        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
-        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
+        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?{MONTH_PATTERN}\s*[’']?\s*(20\d{{2}})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
+        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?{MONTH_PATTERN}\s*,?\s*(\d{{1,2}}):(\d{{2}})",
     )
     for pattern in patterns:
         match = re.search(pattern, value, re.I)
@@ -61,7 +61,7 @@ def _parse_date_time(value: str) -> datetime | None:
 
 
 def _is_date_heading(line: str) -> bool:
-    return bool(DATE_HEADING_RE.search(_clean(line)))
+    return bool(DATE_HEADING_RE.fullmatch(_clean(line)))
 
 
 def _is_category_line(line: str) -> bool:
