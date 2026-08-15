@@ -40,7 +40,8 @@ DATE_HEADING_RE = re.compile(
     rf"^\d{{1,2}}\s+.*?({MONTH_PATTERN}).*?20\d{{2}}\s*$", re.I
 )
 LOCATION_RE = re.compile(
-    rf"^Тернопіль,\s*\d{{1,2}}\s+({MONTH_PATTERN})\s+20\d{{2}},\s*\d{{1,2}}:\d{{2}}$", re.I
+    rf"^(?:\[)?\*{{0,2}}Тернопіль\*{{0,2}}(?:\]\([^)]*\))?\s*,?\s*(\d{{1,2}}\s+{MONTH_PATTERN}\s+20\d{{2}},\s*\d{{1,2}}:\d{{2}})\s*$",
+    re.I,
 )
 PRICE_RE = re.compile(
     r"^(?:\d[\d\s]*(?:-|–)\s*\d[\d\s]*|\d[\d\s]*)\s*(?:грн|UAH)$", re.I
@@ -110,6 +111,13 @@ def _title_and_url(line: str, source_url: str) -> tuple[str, str]:
     return _clean(line), source_url
 
 
+def _location_start(line: str) -> datetime | None:
+    match = LOCATION_RE.fullmatch(line)
+    if not match:
+        return None
+    return _parse_date_time(match.group(1))
+
+
 def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawEvent]:
     """Extract KARABAS event cards from their stable semantic field order."""
     lines = [_clean(x.strip("#*- ")) for x in text.splitlines() if _clean(x.strip("#*- "))]
@@ -117,12 +125,12 @@ def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawE
 
     for block_lines in _event_blocks(lines):
         location_idx = next(
-            (i for i, line in enumerate(block_lines) if LOCATION_RE.fullmatch(line)), None
+            (i for i, line in enumerate(block_lines) if _location_start(line)), None
         )
         if location_idx is None or location_idx < 2:
             continue
 
-        start = _parse_date_time(block_lines[location_idx])
+        start = _location_start(block_lines[location_idx])
         if not start or start < now:
             continue
 
