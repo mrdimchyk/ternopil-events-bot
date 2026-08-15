@@ -3,7 +3,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 
 from app.collectors.base import RawEvent
-from app.services.event_identity import normalize_title
+from app.services.event_identity import make_group_key, normalize_title
 
 
 @dataclass(slots=True)
@@ -52,8 +52,7 @@ def build_canonical_events(events_by_source: dict[str, list[RawEvent]]) -> list[
         ordered = sorted(cluster, key=lambda item: (len(item[1].title), item[1].title), reverse=True)
         representative = ordered[0][1]
         start_at = min((event.start_at for _, event in cluster if event.start_at is not None), default=None)
-        source_names = sorted(source for source, _ in cluster)
-        key_basis = f"{normalize_title(representative.title)}|{start_at.isoformat() if start_at else ''}|{normalize_title(representative.venue or '')}"
+        key_basis = make_group_key(representative.title, start_at, representative.venue)
 
         result.append(
             CanonicalEvent(
