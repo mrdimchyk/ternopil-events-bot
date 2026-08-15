@@ -16,31 +16,30 @@ HOME_URL = "https://teatr.org.ua/"
 EVENT_PATH_PREFIX = "/events/"
 TOUR_PATH_PREFIX = "/tours/"
 MONTHS = {
-    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5, "червня": 6,
-    "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
+    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
+    "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
+    "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
 }
 
 
 def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
     soup = BeautifulSoup(text, "lxml")
-    candidates: list[str] = []
-    candidates.extend(
+    candidates = [
         anchor.get("href")
         for anchor in soup.select(f'a[href*="{path_prefix}"]')
         if isinstance(anchor.get("href"), str)
-    )
+    ]
     escaped = re.escape(path_prefix)
-    candidates.extend(re.findall(rf"https?://teatr\.org\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text))
-    candidates.extend(re.findall(rf"(?:https?://teatr\.org\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text))
-    urls: list[str] = []
-    seen: set[str] = set()
+    candidates += re.findall(rf"https?://teatr\.org\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text)
+    candidates += re.findall(rf"(?:https?://teatr\.org\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text)
+    result, seen = [], set()
     for href in candidates:
         url = urljoin(base_url, href).rstrip(")],.;")
         if path_prefix not in url or url in seen:
             continue
         seen.add(url)
-        urls.append(url)
-    return urls
+        result.append(url)
+    return result
 
 
 def _event_urls(text: str, base_url: str) -> list[str]:
@@ -64,13 +63,8 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
             return
         types = value.get("@type")
         types = types if isinstance(types, list) else [types]
-        is_event = any(
-            isinstance(item, str)
-            and (item == "Event" or item.rsplit("/", 1)[-1].endswith("Event"))
-            for item in types
-        )
-        name = value.get("name")
-        start = value.get("startDate")
+        is_event = any(isinstance(item, str) and (item == "Event" or item.rsplit("/", 1)[-1].endswith("Event")) for item in types)
+        name, start = value.get("name"), value.get("startDate")
         if is_event and name and start:
             try:
                 start_at = datetime.fromisoformat(str(start).replace("Z", "+00:00")).replace(tzinfo=None)
@@ -138,22 +132,17 @@ def _markdown_city_events(text: str, now: datetime) -> list[RawEvent]:
         start = datetime(int(year), MONTHS[month_name.lower()], int(day), int(hour), int(minute))
         if start < now:
             continue
-        location_index = next(
-            (
-                j for j in range(index + 1, min(index + 7, len(lines)))
-                if re.match(r"^Тернопіль(?:,|$)", lines[j].lstrip("#>*- ").strip(), re.I)
-            ), None,
-        )
+        location_index = next((j for j in range(index + 1, min(index + 8, len(lines))) if re.match(r"^Тернопіль(?:,|$)", lines[j].lstrip("#>*- ").strip(), re.I)), None)
         if location_index is None:
             continue
         title = None
-        for candidate in reversed(lines[max(0, index - 8):index]):
+        for candidate in reversed(lines[max(0, index - 10):index]):
             candidate = candidate.lstrip("#>*- ").strip()
             if not candidate or candidate.startswith("Image:"):
                 continue
             if candidate in {"Події у місті", "Вистави та концерти у Тернополі"}:
                 continue
-            if re.match(r"^(Детальніше|Купити квиток|від\s+\d+\s*грн)$", candidate, re.I):
+            if re.match(r"^(Детальніше|Купити квиток|від\s+\d+\s*грн)", candidate, re.I):
                 continue
             title = candidate
             break
@@ -162,7 +151,7 @@ def _markdown_city_events(text: str, now: datetime) -> list[RawEvent]:
         location = lines[location_index].lstrip("#>*- ").strip()
         venue = location.split(",", 1)[1].strip() if "," in location else None
         price = None
-        for candidate in lines[location_index + 1:min(location_index + 4, len(lines))]:
+        for candidate in lines[location_index + 1:min(location_index + 5, len(lines))]:
             price_match = re.search(r"(?:від\s*)?([0-9][0-9\s]*)\s*грн", candidate, re.I)
             if price_match:
                 price = int(price_match.group(1).replace(" ", ""))
@@ -205,12 +194,7 @@ def _time_attribute_events(text: str, now: datetime) -> list[RawEvent]:
             city_index = next((i for i, x in enumerate(lines) if re.search(r"^Тернопіль(?:,|\s|$)", x, re.I)), None)
             if city_index is None:
                 continue
-            title = next(
-                (
-                    x for x in reversed(lines[:city_index])
-                    if len(x) > 2 and not re.match(r"^(Детальніше|Купити квиток|Image:)", x, re.I)
-                ), None,
-            )
+            title = next((x for x in reversed(lines[:city_index]) if len(x) > 2 and not re.match(r"^(Детальніше|Купити квиток|Image:)", x, re.I)), None)
             if not title:
                 continue
             venue = lines[city_index].split(",", 1)[1].strip() if "," in lines[city_index] else None
@@ -259,64 +243,80 @@ def _fetch_markdown(client: httpx.Client, url: str, headers: dict[str, str]) -> 
     return response.text
 
 
+def _extend_events(target: dict[str, RawEvent], events: list[RawEvent], now: datetime) -> None:
+    for event in events:
+        if event.start_at is None or event.start_at < now:
+            continue
+        location_text = " ".join(part for part in (event.venue, event.address) if part).lower()
+        if location_text and "терноп" not in location_text:
+            continue
+        target[event.external_id] = event
+
+
 def collect(timeout: float = 20.0):
     events = collect_line_catalog([BASE_URL], timeout=timeout)
     if events:
         return events
+
     now = datetime.now()
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36",
         "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
     }
+    recovered: dict[str, RawEvent] = {}
+
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
         response = client.get(BASE_URL)
         response.raise_for_status()
-        urls = _event_urls(response.text, BASE_URL)
-        direct_events = _future_city_events(response.text, now)
-        if direct_events:
-            return direct_events
+        city_html = response.text
+        _extend_events(recovered, _future_city_events(city_html, now), now)
+        urls = _event_urls(city_html, BASE_URL)
+
         try:
-            markdown = _fetch_markdown(client, BASE_URL, headers)
-            direct_events = _future_city_events(markdown, now)
-            if direct_events:
-                return direct_events
-            urls.extend(_event_urls(markdown, BASE_URL))
+            city_markdown = _fetch_markdown(client, BASE_URL, headers)
+            _extend_events(recovered, _future_city_events(city_markdown, now), now)
+            urls.extend(_event_urls(city_markdown, BASE_URL))
         except (httpx.HTTPError, ValueError, TypeError):
             pass
-        if not urls:
-            try:
-                page = client.get(HOME_URL)
-                page.raise_for_status()
-                tour_urls = _tour_urls(page.text, HOME_URL)
-                if not tour_urls:
-                    tour_urls = _tour_urls(_fetch_markdown(client, HOME_URL, headers), HOME_URL)
-                for tour_url in tour_urls[:50]:
-                    try:
-                        tour_page = client.get(tour_url)
-                        tour_page.raise_for_status()
-                        tour_event_urls = _event_urls(tour_page.text, tour_url)
-                        if not tour_event_urls:
-                            tour_event_urls = _event_urls(_fetch_markdown(client, tour_url, headers), tour_url)
-                        urls.extend(tour_event_urls)
-                    except (httpx.HTTPError, ValueError, TypeError):
-                        continue
-            except (httpx.HTTPError, ValueError, TypeError):
-                pass
-        recovered: dict[str, RawEvent] = {}
-        for event_url in urls[:100]:
+
+        # City-page event URLs can be stale or inaccessible. Always inspect tour pages independently.
+        try:
+            home = client.get(HOME_URL)
+            home.raise_for_status()
+            tour_urls = _tour_urls(home.text, HOME_URL)
+            if not tour_urls:
+                tour_urls = _tour_urls(_fetch_markdown(client, HOME_URL, headers), HOME_URL)
+            for tour_url in tour_urls[:50]:
+                try:
+                    tour_page = client.get(tour_url)
+                    tour_page.raise_for_status()
+                    _extend_events(recovered, _future_city_events(tour_page.text, now), now)
+                    tour_event_urls = _event_urls(tour_page.text, tour_url)
+                    if not tour_event_urls:
+                        tour_markdown = _fetch_markdown(client, tour_url, headers)
+                        _extend_events(recovered, _future_city_events(tour_markdown, now), now)
+                        tour_event_urls = _event_urls(tour_markdown, tour_url)
+                    urls.extend(tour_event_urls)
+                except (httpx.HTTPError, ValueError, TypeError):
+                    continue
+        except (httpx.HTTPError, ValueError, TypeError):
+            pass
+
+        for event_url in list(dict.fromkeys(urls))[:100]:
             try:
                 page = client.get(event_url)
                 page.raise_for_status()
                 parsed = [event for event in _raw_jsonld(page.text, event_url) if event.start_at is not None and event.start_at >= now]
                 if not parsed:
                     parsed = _parse_event_page(page.text, event_url, now)
+                _extend_events(recovered, parsed, now)
                 if not parsed:
                     markdown = _fetch_markdown(client, event_url, headers)
                     parsed = [event for event in _raw_jsonld(markdown, event_url) if event.start_at is not None and event.start_at >= now]
                     if not parsed:
                         parsed = _parse_event_page(markdown, event_url, now)
+                    _extend_events(recovered, parsed, now)
             except (httpx.HTTPError, ValueError, TypeError):
                 continue
-            for event in parsed:
-                recovered[event.external_id] = event
-        return list(recovered.values())
+
+    return list(recovered.values())
