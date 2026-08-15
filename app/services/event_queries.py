@@ -26,9 +26,8 @@ def events_for_day(session: Session, day: datetime) -> list[Event]:
     )
 
 
-def canonical_events_for_day(session: Session, day: datetime) -> list[CanonicalDbEvent]:
-    """Return one display event per canonical group while preserving all source offers."""
-    events = events_for_day(session, day)
+def canonicalize_db_events(events: list[Event]) -> list[CanonicalDbEvent]:
+    """Collapse source records by group_key without dropping ticket offers."""
     groups: dict[str, list[Event]] = {}
     for event in events:
         groups.setdefault(event.group_key, []).append(event)
@@ -45,5 +44,12 @@ def canonical_events_for_day(session: Session, day: datetime) -> list[CanonicalD
         )[0]
         result.append(CanonicalDbEvent(representative=representative, sources=members))
 
-    result.sort(key=lambda item: (item.representative.start_at or datetime.max, item.representative.title))
-    return result
+    return sorted(
+        result,
+        key=lambda item: (item.representative.start_at or datetime.max, item.representative.title),
+    )
+
+
+def canonical_events_for_day(session: Session, day: datetime) -> list[CanonicalDbEvent]:
+    """Return one display event per canonical group while preserving all source offers."""
+    return canonicalize_db_events(events_for_day(session, day))
