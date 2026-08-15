@@ -1,4 +1,6 @@
+import json
 from datetime import datetime
+from pathlib import Path
 
 from app.collectors.base import RawEvent
 from app.services.canonical_events import build_canonical_events
@@ -37,3 +39,35 @@ def test_different_events_remain_separate():
     result = build_canonical_events({"KARABAS": [first, second]})
 
     assert len(result) == 2
+
+
+def test_real_production_duplicate_fixture_forms_three_canonical_events():
+    fixture_path = Path(__file__).parent / "fixtures" / "canonical_duplicates_oct_2026.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    events_by_source: dict[str, list[RawEvent]] = {}
+
+    for source, records in fixture.items():
+        events_by_source[source] = [
+            RawEvent(
+                external_id=record["external_id"],
+                title=record["title"],
+                category="theatre",
+                start_at=datetime.fromisoformat(record["start_at"]),
+                venue=record["venue"],
+                address="Тернопіль",
+                price_text=None,
+                ticket_url=f"https://example.com/{record['external_id']}",
+                source_url=f"https://example.com/{source}/{record['external_id']}",
+            )
+            for record in records
+        ]
+
+    result = build_canonical_events(events_by_source)
+
+    assert len(result) == 3
+    assert sorted(len(canonical.sources) for canonical in result) == [2, 2, 2]
+    assert {canonical.title for canonical in result} == {
+        "Я бачу, вас цікавить пітьма",
+        "Хор «Гомін»",
+        "Я, «Побєда» і Берлін",
+    }
