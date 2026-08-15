@@ -3,6 +3,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
@@ -28,41 +29,23 @@ MONTHS = {
     "грудня": 12,
 }
 MONTH_SLUGS = [
-    "january",
-    "february",
-    "march",
-    "april",
-    "may",
-    "june",
-    "july",
-    "august",
-    "september",
-    "october",
-    "november",
-    "december",
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
 ]
 MONTH_PATTERN = "|".join(MONTHS)
 CATEGORY_LABELS = {
-    "концерти",
-    "театри",
-    "дітям",
-    "stand-up",
-    "клуби",
-    "фестивалі",
-    "інші",
+    "концерти", "театри", "дітям", "stand-up", "клуби", "фестивалі", "інші",
 }
 DATE_HEADING_RE = re.compile(
-    rf"^\d{{1,2}}\s+.*?({MONTH_PATTERN}).*?20\d{{2}}\s*$",
-    re.I,
+    rf"^\d{{1,2}}\s+.*?({MONTH_PATTERN}).*?20\d{{2}}\s*$", re.I
 )
 LOCATION_RE = re.compile(
-    rf"^Тернопіль,\s*\d{{1,2}}\s+({MONTH_PATTERN})\s+20\d{{2}},\s*\d{{1,2}}:\d{{2}}$",
-    re.I,
+    rf"^Тернопіль,\s*\d{{1,2}}\s+({MONTH_PATTERN})\s+20\d{{2}},\s*\d{{1,2}}:\d{{2}}$", re.I
 )
 PRICE_RE = re.compile(
-    r"^(?:\d[\d\s]*(?:-|–)\s*\d[\d\s]*|\d[\d\s]*)\s*(?:грн|UAH)$",
-    re.I,
+    r"^(?:\d[\d\s]*(?:-|–)\s*\d[\d\s]*|\d[\d\s]*)\s*(?:грн|UAH)$", re.I
 )
+MARKDOWN_LINK_RE = re.compile(r"^\[([^\]]+)\]\(([^)]+)\)$")
 
 
 def _clean(s: str) -> str:
@@ -78,7 +61,6 @@ def _id(url: str, title: str, start: datetime) -> str:
 
 
 def _parse_date_time(value: str) -> datetime | None:
-    """Parse date/time formats used by KARABAS month and event-location lines."""
     patterns = (
         rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
         rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
@@ -115,11 +97,17 @@ def _parse_price_line(line: str) -> str | None:
 
 def _event_blocks(lines: list[str]) -> list[list[str]]:
     date_indices = [i for i, line in enumerate(lines) if _is_date_heading(line)]
-    blocks: list[list[str]] = []
-    for pos, idx in enumerate(date_indices):
-        end = date_indices[pos + 1] if pos + 1 < len(date_indices) else len(lines)
-        blocks.append(lines[idx:end])
-    return blocks
+    return [
+        lines[idx:date_indices[pos + 1] if pos + 1 < len(date_indices) else len(lines)]
+        for pos, idx in enumerate(date_indices)
+    ]
+
+
+def _title_and_url(line: str, source_url: str) -> tuple[str, str]:
+    match = MARKDOWN_LINK_RE.fullmatch(line.strip())
+    if match:
+        return _clean(match.group(1)), urljoin(source_url, match.group(2))
+    return _clean(line), source_url
 
 
 def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawEvent]:
@@ -129,8 +117,7 @@ def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawE
 
     for block_lines in _event_blocks(lines):
         location_idx = next(
-            (i for i, line in enumerate(block_lines) if LOCATION_RE.fullmatch(line)),
-            None,
+            (i for i, line in enumerate(block_lines) if LOCATION_RE.fullmatch(line)), None
         )
         if location_idx is None or location_idx < 2:
             continue
@@ -140,17 +127,16 @@ def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawE
             continue
 
         title_candidates = [
-            line
-            for line in block_lines[1:location_idx]
-            if not _is_category_line(line)
+            line for line in block_lines[1:location_idx] if not _is_category_line(line)
         ]
         if not title_candidates:
             continue
-        title = title_candidates[-1]
+        title, event_url = _title_and_url(title_candidates[-1], source_url)
+        if not title:
+            continue
 
         category_line = next(
-            (line for line in block_lines[1:location_idx] if _is_category_line(line)),
-            None,
+            (line for line in block_lines[1:location_idx] if _is_category_line(line)), None
         )
         category = None
         if category_line:
@@ -163,9 +149,7 @@ def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawE
                 category = "standup"
 
         venue = block_lines[location_idx + 1] if location_idx + 1 < len(block_lines) else None
-        status_or_price = (
-            block_lines[location_idx + 2] if location_idx + 2 < len(block_lines) else None
-        )
+        status_or_price = block_lines[location_idx + 2] if location_idx + 2 < len(block_lines) else None
         if status_or_price and re.search(
             r"\b(Скасовано|Перенесено|Cancelled|Transferred|Продано)\b",
             status_or_price,
@@ -176,15 +160,15 @@ def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawE
 
         events.append(
             RawEvent(
-                external_id=_external_id(source_url, title, start),
+                external_id=_external_id(event_url, title, start),
                 title=title,
                 category=category,
                 start_at=start,
                 venue=venue,
                 address=None,
                 price_text=price_text,
-                ticket_url=source_url,
-                source_url=source_url,
+                ticket_url=event_url,
+                source_url=event_url,
                 description=None,
             )
         )
@@ -197,12 +181,10 @@ def _extract_events(text: str, source_url: str, now: datetime) -> list[RawEvent]
 
 
 def _month_urls(now: datetime) -> list[str]:
-    urls: list[str] = []
-    for offset in range(6):
-        month_index = now.month - 1 + offset
-        slug = MONTH_SLUGS[month_index % 12]
-        urls.append(f"{BASE_URL}{slug}/")
-    return urls
+    return [
+        f"{BASE_URL}{MONTH_SLUGS[(now.month - 1 + offset) % 12]}/"
+        for offset in range(6)
+    ]
 
 
 def _get_page(client: httpx.Client, url: str, timeout: float) -> str:
@@ -219,8 +201,17 @@ def _get_page(client: httpx.Client, url: str, timeout: float) -> str:
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         slug = url.rstrip("/").split("/")[-1] or "root"
         (DEBUG_DIR / f"{slug}.txt").write_text(text, encoding="utf-8")
-
     return text
+
+
+def _html_to_markdownish(text: str, base_url: str) -> str:
+    soup = BeautifulSoup(text, "lxml")
+    for anchor in soup.select("a[href]"):
+        label = _clean(anchor.get_text(" ", strip=True))
+        href = anchor.get("href")
+        if label and href:
+            anchor.replace_with(f"[{label}]({urljoin(base_url, href)})")
+    return "\n".join(_clean(x) for x in soup.stripped_strings if _clean(x))
 
 
 def collect(timeout: float = 30.0):
@@ -230,7 +221,6 @@ def collect(timeout: float = 30.0):
         "Accept": "text/plain,text/markdown,text/html;q=0.9,*/*;q=0.8",
         "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
     }
-
     events: list[RawEvent] = []
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
         for url in _month_urls(now):
@@ -238,11 +228,7 @@ def collect(timeout: float = 30.0):
                 text = _get_page(client, url, timeout)
             except httpx.HTTPError:
                 continue
-
             if "<html" in text.lower() or "<body" in text.lower():
-                soup = BeautifulSoup(text, "lxml")
-                text = "\n".join(_clean(x) for x in soup.stripped_strings if _clean(x))
-
+                text = _html_to_markdownish(text, url)
             events.extend(_extract_event_cards(text, url, now))
-
     return list({e.external_id: e for e in events}.values())
