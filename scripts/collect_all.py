@@ -1,4 +1,7 @@
+import json
+from dataclasses import asdict
 from datetime import datetime, timezone
+from pathlib import Path
 
 from app.collectors.registry import COLLECTORS
 from app.db.session import SessionLocal, init_db
@@ -10,6 +13,7 @@ from app.services.source_runs import finish_run, start_run
 # is explicitly known to be legitimately empty. This prevents HTTP/parsing
 # failures from being silently reported as successful runs.
 ALLOW_EMPTY_SOURCES = {"TicketsBox"}
+QUALITY_REPORT = Path("quality-report.json")
 
 
 def main() -> None:
@@ -18,6 +22,7 @@ def main() -> None:
     events_by_source = {}
     quality_errors = 0
     quality_warnings = 0
+    quality_issues = []
 
     for source_name, base_url, collect in COLLECTORS:
         with SessionLocal() as session:
@@ -38,6 +43,7 @@ def main() -> None:
                 raw_events,
                 now=datetime.now(timezone.utc),
             )
+            quality_issues.extend(issues)
             errors = [issue for issue in issues if issue.severity == "error"]
             warnings = [issue for issue in issues if issue.severity == "warning"]
             quality_errors += len(errors)
@@ -82,6 +88,25 @@ def main() -> None:
             print(f"{source_name}: ERROR {exc}")
 
     duplicates = find_duplicate_candidates(events_by_source)
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "sources": {
+            source: {"collected": len(events)}
+            for source, events in events_by_source.items()
+        },
+        "totals": totals,
+        "quality": {
+            "invalid_events": quality_errors,
+            "warnings": quality_warnings,
+            "issues": [asdict(issue) for issue in quality_issues],
+        },
+        "duplicate_candidates": [asdict(duplicate) for duplicate in duplicates],
+    }
+    QUALITY_REPORT.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+
     print(
         f"QUALITY SUMMARY: invalid_events={quality_errors} "
         f"warnings={quality_warnings} duplicate_candidates={len(duplicates)}"
