@@ -16,18 +16,8 @@ HOME_URL = "https://teatr.org.ua/"
 EVENT_PATH_PREFIX = "/events/"
 TOUR_PATH_PREFIX = "/tours/"
 MONTHS = {
-    "січня": 1,
-    "лютого": 2,
-    "березня": 3,
-    "квітня": 4,
-    "травня": 5,
-    "червня": 6,
-    "липня": 7,
-    "серпня": 8,
-    "вересня": 9,
-    "жовтня": 10,
-    "листопада": 11,
-    "грудня": 12,
+    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5, "червня": 6,
+    "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
 }
 
 
@@ -40,16 +30,8 @@ def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
         if isinstance(anchor.get("href"), str)
     )
     escaped = re.escape(path_prefix)
-    candidates.extend(
-        re.findall(
-            rf"https?://teatr\.org\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text
-        )
-    )
-    candidates.extend(
-        re.findall(
-            rf"(?:https?://teatr\.org\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text
-        )
-    )
+    candidates.extend(re.findall(rf"https?://teatr\.org\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text))
+    candidates.extend(re.findall(rf"(?:https?://teatr\.org\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text))
     urls: list[str] = []
     seen: set[str] = set()
     for href in candidates:
@@ -91,9 +73,7 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
         start = value.get("startDate")
         if is_event and name and start:
             try:
-                start_at = datetime.fromisoformat(
-                    str(start).replace("Z", "+00:00")
-                ).replace(tzinfo=None)
+                start_at = datetime.fromisoformat(str(start).replace("Z", "+00:00")).replace(tzinfo=None)
             except ValueError:
                 start_at = None
             location = value.get("location") or {}
@@ -109,9 +89,7 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
             ticket_url = offers.get("url") if isinstance(offers, dict) else None
             price = offers.get("price") if isinstance(offers, dict) else None
             source_url = urljoin(page_url, value.get("url") or page_url)
-            external_id = hashlib.sha256(
-                f"{source_url}|{name}|{start}".encode()
-            ).hexdigest()[:32]
+            external_id = hashlib.sha256(f"{source_url}|{name}|{start}".encode()).hexdigest()[:32]
             result[external_id] = RawEvent(
                 external_id=external_id,
                 title=str(name).strip(),
@@ -149,10 +127,7 @@ def _markdown_city_events(text: str, now: datetime) -> list[RawEvent]:
     normalized = text.replace("\u00a0", " ").replace("\r", "")
     lines = [re.sub(r"\s+", " ", line.strip()) for line in normalized.splitlines() if line.strip()]
     month_pattern = "|".join(MONTHS)
-    date_re = re.compile(
-        rf"^(?:[#>*-]+\s*)?(\d{{1,2}})\s+({month_pattern})\s+(\d{{4}}),\s*(\d{{1,2}}):(\d{{2}})$",
-        re.I,
-    )
+    date_re = re.compile(rf"^(?:[#>*-]+\s*)?(\d{{1,2}})\s+({month_pattern})\s+(\d{{4}}),\s*(\d{{1,2}}):(\d{{2}})$", re.I)
     events: dict[str, RawEvent] = {}
     for index, line in enumerate(lines):
         clean = line.lstrip("#>*- ").strip()
@@ -160,25 +135,19 @@ def _markdown_city_events(text: str, now: datetime) -> list[RawEvent]:
         if not match:
             continue
         day, month_name, year, hour, minute = match.groups()
-        start = datetime(
-            int(year), MONTHS[month_name.lower()], int(day), int(hour), int(minute)
-        )
+        start = datetime(int(year), MONTHS[month_name.lower()], int(day), int(hour), int(minute))
         if start < now:
             continue
         location_index = next(
             (
-                j
-                for j in range(index + 1, min(index + 7, len(lines)))
-                if re.match(
-                    r"^Тернопіль(?:,|$)", lines[j].lstrip("#>*- ").strip(), re.I
-                )
-            ),
-            None,
+                j for j in range(index + 1, min(index + 7, len(lines)))
+                if re.match(r"^Тернопіль(?:,|$)", lines[j].lstrip("#>*- ").strip(), re.I)
+            ), None,
         )
         if location_index is None:
             continue
         title = None
-        for candidate in reversed(lines[max(0, index - 8) : index]):
+        for candidate in reversed(lines[max(0, index - 8):index]):
             candidate = candidate.lstrip("#>*- ").strip()
             if not candidate or candidate.startswith("Image:"):
                 continue
@@ -193,14 +162,12 @@ def _markdown_city_events(text: str, now: datetime) -> list[RawEvent]:
         location = lines[location_index].lstrip("#>*- ").strip()
         venue = location.split(",", 1)[1].strip() if "," in location else None
         price = None
-        for candidate in lines[location_index + 1 : min(location_index + 4, len(lines))]:
+        for candidate in lines[location_index + 1:min(location_index + 4, len(lines))]:
             price_match = re.search(r"(?:від\s*)?([0-9][0-9\s]*)\s*грн", candidate, re.I)
             if price_match:
                 price = int(price_match.group(1).replace(" ", ""))
                 break
-        external_id = hashlib.sha256(
-            f"{BASE_URL}|{title}|{start.isoformat()}".encode()
-        ).hexdigest()[:32]
+        external_id = hashlib.sha256(f"{BASE_URL}|{title}|{start.isoformat()}".encode()).hexdigest()[:32]
         events[external_id] = RawEvent(
             external_id=external_id,
             title=title,
@@ -235,26 +202,19 @@ def _time_attribute_events(text: str, now: datetime) -> list[RawEvent]:
                 break
             card = card.parent
             lines = [" ".join(x.split()) for x in card.stripped_strings if " ".join(x.split())]
-            city_index = next(
-                (i for i, x in enumerate(lines) if re.search(r"^Тернопіль(?:,|\s|$)", x, re.I)),
-                None,
-            )
+            city_index = next((i for i, x in enumerate(lines) if re.search(r"^Тернопіль(?:,|\s|$)", x, re.I)), None)
             if city_index is None:
                 continue
             title = next(
                 (
-                    x
-                    for x in reversed(lines[:city_index])
+                    x for x in reversed(lines[:city_index])
                     if len(x) > 2 and not re.match(r"^(Детальніше|Купити квиток|Image:)", x, re.I)
-                ),
-                None,
+                ), None,
             )
             if not title:
                 continue
             venue = lines[city_index].split(",", 1)[1].strip() if "," in lines[city_index] else None
-            external_id = hashlib.sha256(
-                f"{BASE_URL}|{title}|{start.isoformat()}".encode()
-            ).hexdigest()[:32]
+            external_id = hashlib.sha256(f"{BASE_URL}|{title}|{start.isoformat()}".encode()).hexdigest()[:32]
             events[external_id] = RawEvent(
                 external_id=external_id,
                 title=title,
@@ -272,26 +232,29 @@ def _time_attribute_events(text: str, now: datetime) -> list[RawEvent]:
 
 
 def _future_city_events(text: str, now: datetime) -> list[RawEvent]:
-    parsed = _parse_event_page(text, BASE_URL, now)
-    if not parsed:
-        parsed = _time_attribute_events(text, now)
-    if not parsed:
-        parsed = _markdown_city_events(text, now)
-    return [
-        event
-        for event in parsed
-        if event.start_at is not None
-        and event.start_at >= now
-        and (not event.venue or "терноп" in event.venue.lower())
-        and (not event.address or "терноп" in event.address.lower())
-    ]
+    candidates: list[RawEvent] = []
+    for parser in (_markdown_city_events, _time_attribute_events):
+        try:
+            candidates.extend(parser(text, now))
+        except (ValueError, TypeError):
+            continue
+    try:
+        candidates.extend(_parse_event_page(text, BASE_URL, now))
+    except (ValueError, TypeError):
+        pass
+    unique: dict[str, RawEvent] = {}
+    for event in candidates:
+        if event.start_at is None or event.start_at < now:
+            continue
+        location_text = " ".join(part for part in (event.venue, event.address) if part).lower()
+        if location_text and "терноп" not in location_text:
+            continue
+        unique[event.external_id] = event
+    return list(unique.values())
 
 
 def _fetch_markdown(client: httpx.Client, url: str, headers: dict[str, str]) -> str:
-    response = client.get(
-        "https://r.jina.ai/" + url,
-        headers={**headers, "x-no-cache": "true"},
-    )
+    response = client.get("https://r.jina.ai/" + url, headers={**headers, "x-no-cache": "true"})
     response.raise_for_status()
     return response.text
 
@@ -326,18 +289,14 @@ def collect(timeout: float = 20.0):
                 page.raise_for_status()
                 tour_urls = _tour_urls(page.text, HOME_URL)
                 if not tour_urls:
-                    tour_urls = _tour_urls(
-                        _fetch_markdown(client, HOME_URL, headers), HOME_URL
-                    )
+                    tour_urls = _tour_urls(_fetch_markdown(client, HOME_URL, headers), HOME_URL)
                 for tour_url in tour_urls[:50]:
                     try:
                         tour_page = client.get(tour_url)
                         tour_page.raise_for_status()
                         tour_event_urls = _event_urls(tour_page.text, tour_url)
                         if not tour_event_urls:
-                            tour_event_urls = _event_urls(
-                                _fetch_markdown(client, tour_url, headers), tour_url
-                            )
+                            tour_event_urls = _event_urls(_fetch_markdown(client, tour_url, headers), tour_url)
                         urls.extend(tour_event_urls)
                     except (httpx.HTTPError, ValueError, TypeError):
                         continue
@@ -348,20 +307,12 @@ def collect(timeout: float = 20.0):
             try:
                 page = client.get(event_url)
                 page.raise_for_status()
-                parsed = [
-                    event
-                    for event in _raw_jsonld(page.text, event_url)
-                    if event.start_at is not None and event.start_at >= now
-                ]
+                parsed = [event for event in _raw_jsonld(page.text, event_url) if event.start_at is not None and event.start_at >= now]
                 if not parsed:
                     parsed = _parse_event_page(page.text, event_url, now)
                 if not parsed:
                     markdown = _fetch_markdown(client, event_url, headers)
-                    parsed = [
-                        event
-                        for event in _raw_jsonld(markdown, event_url)
-                        if event.start_at is not None and event.start_at >= now
-                    ]
+                    parsed = [event for event in _raw_jsonld(markdown, event_url) if event.start_at is not None and event.start_at >= now]
                     if not parsed:
                         parsed = _parse_event_page(markdown, event_url, now)
             except (httpx.HTTPError, ValueError, TypeError):
