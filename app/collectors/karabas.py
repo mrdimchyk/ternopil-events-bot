@@ -40,8 +40,8 @@ def _external_id(url: str, title: str, start: datetime) -> str:
 def _parse_date_time(value: str) -> datetime | None:
     value = _clean(value)
     patterns = (
-        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?{MONTH_PATTERN}\s*[’']?\s*(20\d{{2}})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
-        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?{MONTH_PATTERN}\s*,?\s*(\d{{1,2}}):(\d{{2}})",
+        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*[’']?\s*(20\d{{2}})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
+        rf"\b(\d{{1,2}})\s+(?:[А-Яа-яІіЇїЄєҐґ]+\s+)?({MONTH_PATTERN})\s*,?\s*(\d{{1,2}}):(\d{{2}})",
     )
     for pattern in patterns:
         match = re.search(pattern, value, re.I)
@@ -55,7 +55,7 @@ def _parse_date_time(value: str) -> datetime | None:
             year = str(datetime.now().year)
         try:
             return datetime(int(year), MONTHS[month.lower()], int(day), int(hour), int(minute))
-        except ValueError:
+        except (ValueError, KeyError):
             return None
     return None
 
