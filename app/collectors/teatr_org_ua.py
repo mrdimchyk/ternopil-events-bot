@@ -20,19 +20,10 @@ TOUR_PATH_PREFIX = "/tours/"
 def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
     soup = BeautifulSoup(text, "lxml")
     candidates: list[str] = []
-    candidates.extend(
-        anchor.get("href")
-        for anchor in soup.select(f'a[href*="{path_prefix}"]')
-        if isinstance(anchor.get("href"), str)
-    )
+    candidates.extend(anchor.get("href") for anchor in soup.select(f'a[href*="{path_prefix}"]') if isinstance(anchor.get("href"), str))
     escaped = re.escape(path_prefix)
-    candidates.extend(
-        re.findall(rf"https?://teatr\.org\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text)
-    )
-    candidates.extend(
-        re.findall(rf"(?:https?://teatr\.org\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text)
-    )
-
+    candidates.extend(re.findall(rf"https?://teatr\.org\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text))
+    candidates.extend(re.findall(rf"(?:https?://teatr\.org\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text))
     urls: list[str] = []
     seen: set[str] = set()
     for href in candidates:
@@ -44,12 +35,12 @@ def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
     return urls
 
 
-def _event_urls(html: str, base_url: str) -> list[str]:
-    return _path_urls(html, base_url, EVENT_PATH_PREFIX)
+def _event_urls(text: str, base_url: str) -> list[str]:
+    return _path_urls(text, base_url, EVENT_PATH_PREFIX)
 
 
-def _tour_urls(html: str, base_url: str) -> list[str]:
-    return _path_urls(html, base_url, TOUR_PATH_PREFIX)
+def _tour_urls(text: str, base_url: str) -> list[str]:
+    return _path_urls(text, base_url, TOUR_PATH_PREFIX)
 
 
 def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
@@ -63,14 +54,9 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
             return
         if not isinstance(value, dict):
             return
-
         types = value.get("@type")
         types = types if isinstance(types, list) else [types]
-        is_event = any(
-            isinstance(t, str)
-            and (t == "Event" or t.rsplit("/", 1)[-1].endswith("Event"))
-            for t in types
-        )
+        is_event = any(isinstance(t, str) and (t == "Event" or t.rsplit("/", 1)[-1].endswith("Event")) for t in types)
         name = value.get("name")
         start = value.get("startDate")
         if is_event and name and start:
@@ -104,7 +90,6 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
                 source_url=source_url,
                 description=value.get("description"),
             )
-
         for key, child in value.items():
             if key == "@type":
                 continue
@@ -120,23 +105,25 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
     return list(result.values())
 
 
-def _parse_event_page(text: str, page_url: str, now: datetime) -> list:
+def _parse_event_page(text: str, page_url: str, now: datetime) -> list[RawEvent]:
     soup = BeautifulSoup(text, "lxml")
     lines = [" ".join(x.split()) for x in soup.stripped_strings if " ".join(x.split())]
     if not lines:
-        lines = [
-            " ".join(x.strip("#*- ").split())
-            for x in text.splitlines()
-            if " ".join(x.strip("#*- ").split())
-        ]
+        lines = [" ".join(x.strip("#*- ").split()) for x in text.splitlines() if " ".join(x.strip("#*- ").split())]
     return _parse_lines(lines, page_url, now.year, now)
 
 
+def _future_city_events(text: str, now: datetime) -> list[RawEvent]:
+    return [
+        event for event in _parse_event_page(text, BASE_URL, now)
+        if event.start_at is not None and event.start_at >= now
+        and (not event.venue or "терноп" in event.venue.lower())
+        and (not event.address or "терноп" in event.address.lower())
+    ]
+
+
 def _fetch_markdown(client: httpx.Client, url: str, headers: dict[str, str]) -> str:
-    response = client.get(
-        "https://r.jina.ai/" + url,
-        headers={**headers, "x-no-cache": "true"},
-    )
+    response = client.get("https://r.jina.ai/" + url, headers={**headers, "x-no-cache": "true"})
     response.raise_for_status()
     return response.text
 
@@ -155,6 +142,19 @@ def collect(timeout: float = 20.0):
         response = client.get(BASE_URL)
         response.raise_for_status()
         urls = _event_urls(response.text, BASE_URL)
+        direct_events = _future_city_events(response.text, now)
+        if direct_events:
+            return direct_events
+
+        if not urls:
+            try:
+                markdown = _fetch_markdown(client, BASE_URL, headers)
+                direct_events = _future_city_events(markdown, now)
+                if direct_events:
+                    return direct_events
+                urls = _event_urls(markdown, BASE_URL)
+            except (httpx.HTTPError, ValueError, TypeError):
+                pass
 
         if not urls:
             try:
@@ -178,30 +178,17 @@ def collect(timeout: float = 20.0):
             except (httpx.HTTPError, ValueError):
                 pass
 
-        if not urls:
-            try:
-                markdown = _fetch_markdown(client, BASE_URL, headers)
-                urls = _event_urls(markdown, BASE_URL)
-            except (httpx.HTTPError, ValueError):
-                urls = []
-
         recovered: dict[str, RawEvent] = {}
         for event_url in urls[:100]:
             try:
                 page = client.get(event_url)
                 page.raise_for_status()
-                parsed = [
-                    e for e in _raw_jsonld(page.text, event_url)
-                    if e.start_at is not None and e.start_at >= now
-                ]
+                parsed = [e for e in _raw_jsonld(page.text, event_url) if e.start_at is not None and e.start_at >= now]
                 if not parsed:
                     parsed = _parse_event_page(page.text, event_url, now)
                 if not parsed:
                     markdown = _fetch_markdown(client, event_url, headers)
-                    parsed = [
-                        e for e in _raw_jsonld(markdown, event_url)
-                        if e.start_at is not None and e.start_at >= now
-                    ]
+                    parsed = [e for e in _raw_jsonld(markdown, event_url) if e.start_at is not None and e.start_at >= now]
                     if not parsed:
                         parsed = _parse_event_page(markdown, event_url, now)
             except (httpx.HTTPError, ValueError, TypeError):
