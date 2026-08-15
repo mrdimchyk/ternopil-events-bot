@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.db.session import SessionLocal
@@ -12,6 +12,7 @@ from app.services.event_queries import (
     canonical_events_for_day,
     category_counts,
 )
+from app.services.event_search import search_canonical_events
 
 router = Router()
 
@@ -21,7 +22,8 @@ def main_menu() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="📅 Сьогодні", callback_data="events:today"), InlineKeyboardButton(text="📅 Завтра", callback_data="events:tomorrow")],
             [InlineKeyboardButton(text="📆 Вихідні", callback_data="events:weekend"), InlineKeyboardButton(text="🎭 Категорії", callback_data="categories")],
-            [InlineKeyboardButton(text="❤️ Обране", callback_data="favorites"), InlineKeyboardButton(text="🔔 Сповіщення", callback_data="notifications")],
+            [InlineKeyboardButton(text="🔎 Пошук", callback_data="search"), InlineKeyboardButton(text="❤️ Обране", callback_data="favorites")],
+            [InlineKeyboardButton(text="🔔 Сповіщення", callback_data="notifications")],
         ]
     )
 
@@ -84,6 +86,24 @@ def _weekend_range() -> tuple[datetime, datetime]:
 @router.message(CommandStart())
 async def start(message: Message):
     await message.answer("Привіт! 👋\n\nЯ допоможу знайти цікаві події в Тернополі.", reply_markup=main_menu())
+
+
+@router.message(Command("search"))
+async def search(message: Message):
+    query = (message.text or "").partition(" ")[2].strip()
+    if not query:
+        await message.answer("🔎 Напишіть запит після команди, наприклад:\n/search театр\n/search Гомін")
+        return
+    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    with SessionLocal() as session:
+        events = search_canonical_events(session, query, start=start)
+    await _send_events(message, events, f"Результати пошуку: «{query}»")
+
+
+@router.callback_query(lambda c: c.data == "search")
+async def search_help(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer("🔎 Для пошуку напишіть команду, наприклад:\n/search театр\n/search Гомін")
 
 
 @router.callback_query(lambda c: c.data in {"events:today", "events:tomorrow"})
