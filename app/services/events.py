@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from app.collectors.base import RawEvent
 from app.db.models import Event, EventChange, Source, Venue
+from app.services.canonical_events import CanonicalEvent
 from app.services.event_identity import make_group_key
 
 
@@ -107,5 +108,35 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
         if venue:
             event.venue_id = venue.id
 
+    session.commit()
+    return changed
+
+
+def apply_canonical_group_keys(session, canonical_events: list[CanonicalEvent]) -> int:
+    """Assign one group_key to every source record in multi-source canonical clusters."""
+    changed = 0
+    for canonical in canonical_events:
+        if len(canonical.sources) < 2:
+            continue
+        for source_ref in canonical.sources:
+            source = session.scalar(select(Source).where(Source.name == source_ref.source))
+            if not source:
+                continue
+            event = session.scalar(select(Event).where(
+                Event.source_id == source.id,
+                Event.external_id == source_ref.external_id,
+            ))
+            if event and event.group_key != canonical.key:
+                old_key = event.group_key
+                event.group_key = canonical.key
+                _record_change(
+                    session,
+                    event.id,
+                    "canonical_group_assigned",
+                    "group_key",
+                    old_key,
+                    canonical.key,
+                )
+                changed += 1
     session.commit()
     return changed
