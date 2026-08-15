@@ -12,31 +12,39 @@ from app.collectors.line_catalog import _parse_lines, collect_line_catalog
 
 SOURCE_NAME = "Teatr.org.ua"
 BASE_URL = "https://teatr.org.ua/cities/ternopil"
+HOME_URL = "https://teatr.org.ua/"
 EVENT_PATH_PREFIX = "/events/"
+TOUR_PATH_PREFIX = "/tours/"
 
 
-def _event_urls(html: str, base_url: str) -> list[str]:
+def _urls(html: str, base_url: str, prefix: str) -> list[str]:
     soup = BeautifulSoup(html, "lxml")
     candidates: list[str] = []
     candidates.extend(
         anchor.get("href")
-        for anchor in soup.select('a[href*="/events/"]')
+        for anchor in soup.select(f'a[href*="{prefix}"]')
         if isinstance(anchor.get("href"), str)
     )
-    candidates.extend(
-        re.findall(r"https?://teatr\.org\.ua/events/[A-Za-z0-9_./%?=&-]+", html)
-    )
-    candidates.extend(re.findall(r"(?:https?://teatr\.org\.ua)?/events/[A-Za-z0-9_./%?=&-]+", html))
+    candidates.extend(re.findall(rf"https?://teatr\\.org\\.ua{re.escape(prefix)}[A-Za-z0-9_./%?=&-]+", html))
+    candidates.extend(re.findall(rf"(?:https?://teatr\\.org\\.ua)?{re.escape(prefix)}[A-Za-z0-9_./%?=&-]+", html))
 
     urls: list[str] = []
     seen: set[str] = set()
     for href in candidates:
         url = urljoin(base_url, href).rstrip(")],.;")
-        if EVENT_PATH_PREFIX not in url or url in seen:
+        if prefix not in url or url in seen:
             continue
         seen.add(url)
         urls.append(url)
     return urls
+
+
+def _event_urls(html: str, base_url: str) -> list[str]:
+    return _urls(html, base_url, EVENT_PATH_PREFIX)
+
+
+def _tour_urls(html: str, base_url: str) -> list[str]:
+    return _urls(html, base_url, TOUR_PATH_PREFIX)
 
 
 def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
@@ -50,7 +58,6 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
             return
         if not isinstance(value, dict):
             return
-
         types = value.get("@type")
         types = types if isinstance(types, list) else [types]
         is_event = any(isinstance(t, str) and (t == "Event" or t.rsplit("/", 1)[-1].endswith("Event")) for t in types)
@@ -87,7 +94,6 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
                 source_url=source_url,
                 description=value.get("description"),
             )
-
         for key, child in value.items():
             if key == "@type":
                 continue
@@ -111,6 +117,10 @@ def _parse_event_page(text: str, page_url: str, now: datetime) -> list:
     return _parse_lines(lines, page_url, now.year, now)
 
 
+def _future(events: list[RawEvent], now: datetime) -> list[RawEvent]:
+    return [event for event in events if event.start_at is not None and event.start_at >= now and "Тернопіль" in " ".join(filter(None, [event.venue, event.address, event.title]))]
+
+
 def collect(timeout: float = 20.0):
     events = collect_line_catalog([BASE_URL], timeout=timeout)
     if events:
@@ -125,26 +135,42 @@ def collect(timeout: float = 20.0):
         response = client.get(BASE_URL)
         response.raise_for_status()
         urls = _event_urls(response.text, BASE_URL)
+
+        # The city page is dynamically rendered for normal browsers. Its tour
+        # catalogue is also linked from the server-rendered homepage, so use
+        # tour pages as a second discovery path when direct event links are absent.
+        if not urls:
+            home = client.get(HOME_URL)
+            home.raise_for_status()
+            tour_urls = _tour_urls(home.text, HOME_URL)
+            for tour_url in tour_urls[:30]:
+                try:
+                    tour = client.get(tour_url)
+                    tour.raise_for_status()
+                    urls.extend(_event_urls(tour.text, tour_url))
+                except httpx.HTTPError:
+                    continue
+
         if not urls:
             jina = client.get("https://r.jina.ai/" + BASE_URL, headers={**headers, "x-no-cache": "true"})
             jina.raise_for_status()
             urls = _event_urls(jina.text, BASE_URL)
 
         recovered: dict[str, RawEvent] = {}
-        for event_url in urls[:50]:
+        for event_url in list(dict.fromkeys(urls))[:100]:
             try:
                 page = client.get(event_url)
                 page.raise_for_status()
-                parsed = [e for e in _raw_jsonld(page.text, event_url) if e.start_at is not None and e.start_at >= now]
+                parsed = _future(_raw_jsonld(page.text, event_url), now)
                 if not parsed:
                     parsed = _parse_event_page(page.text, event_url, now)
+                    parsed = _future(parsed, now)
                 if not parsed:
                     jina = client.get("https://r.jina.ai/" + event_url, headers={**headers, "x-no-cache": "true"})
                     jina.raise_for_status()
-                    parsed = _raw_jsonld(jina.text, event_url)
-                    parsed = [e for e in parsed if e.start_at is not None and e.start_at >= now]
-                if not parsed:
-                    parsed = _parse_event_page(jina.text, event_url, now)
+                    parsed = _future(_raw_jsonld(jina.text, event_url), now)
+                    if not parsed:
+                        parsed = _future(_parse_event_page(jina.text, event_url, now), now)
             except (httpx.HTTPError, ValueError):
                 continue
             for event in parsed:
