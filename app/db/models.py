@@ -8,7 +8,6 @@ from app.db.session import Base
 
 class Source(Base):
     __tablename__ = "sources"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
     base_url: Mapped[str] = mapped_column(String(500))
@@ -18,7 +17,6 @@ class Source(Base):
 
 class Venue(Base):
     __tablename__ = "venues"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -29,7 +27,6 @@ class Venue(Base):
 class Event(Base):
     __tablename__ = "events"
     __table_args__ = (UniqueConstraint("source_id", "external_id", name="uq_event_source_external"),)
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     external_id: Mapped[str] = mapped_column(String(255))
     group_key: Mapped[str] = mapped_column(String(64), index=True)
@@ -46,7 +43,6 @@ class Event(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"))
     venue_id: Mapped[int | None] = mapped_column(ForeignKey("venues.id"), nullable=True)
-
     source = relationship("Source", back_populates="events")
     venue = relationship("Venue", back_populates="events")
     changes = relationship("EventChange", back_populates="event", cascade="all, delete-orphan")
@@ -55,16 +51,26 @@ class Event(Base):
 class Favorite(Base):
     __tablename__ = "favorites"
     __table_args__ = (UniqueConstraint("user_id", "group_key", name="uq_favorite_user_group"),)
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     group_key: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+class NotificationSubscription(Base):
+    __tablename__ = "notification_subscriptions"
+    __table_args__ = (UniqueConstraint("user_id", "group_key", name="uq_notification_user_group"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    group_key: Mapped[str] = mapped_column(String(64), index=True)
+    notify_before_minutes: Mapped[int] = mapped_column(Integer, default=1440)
+    enabled: Mapped[bool] = mapped_column(default=True, index=True)
+    last_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class EventChange(Base):
     __tablename__ = "event_changes"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), index=True)
     change_type: Mapped[str] = mapped_column(String(50), index=True)
@@ -72,13 +78,11 @@ class EventChange(Base):
     old_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     new_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
-
     event = relationship("Event", back_populates="changes")
 
 
 class SourceRun(Base):
     __tablename__ = "source_runs"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
@@ -87,5 +91,4 @@ class SourceRun(Base):
     collected_count: Mapped[int] = mapped_column(Integer, default=0)
     changed_count: Mapped[int] = mapped_column(Integer, default=0)
     error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-
     source = relationship("Source", back_populates="runs")
