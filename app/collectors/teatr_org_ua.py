@@ -17,22 +17,27 @@ EVENT_PATH_PREFIX = "/events/"
 TOUR_PATH_PREFIX = "/tours/"
 
 
-def _urls(html: str, base_url: str, prefix: str) -> list[str]:
-    soup = BeautifulSoup(html, "lxml")
+def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
+    soup = BeautifulSoup(text, "lxml")
     candidates: list[str] = []
     candidates.extend(
         anchor.get("href")
-        for anchor in soup.select(f'a[href*="{prefix}"]')
+        for anchor in soup.select(f'a[href*="{path_prefix}"]')
         if isinstance(anchor.get("href"), str)
     )
-    candidates.extend(re.findall(rf"https?://teatr\\.org\\.ua{re.escape(prefix)}[A-Za-z0-9_./%?=&-]+", html))
-    candidates.extend(re.findall(rf"(?:https?://teatr\\.org\\.ua)?{re.escape(prefix)}[A-Za-z0-9_./%?=&-]+", html))
+    escaped = re.escape(path_prefix)
+    candidates.extend(
+        re.findall(rf"https?://teatr\\.org\\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text)
+    )
+    candidates.extend(
+        re.findall(rf"(?:https?://teatr\\.org\\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text)
+    )
 
     urls: list[str] = []
     seen: set[str] = set()
     for href in candidates:
         url = urljoin(base_url, href).rstrip(")],.;")
-        if prefix not in url or url in seen:
+        if path_prefix not in url or url in seen:
             continue
         seen.add(url)
         urls.append(url)
@@ -40,11 +45,11 @@ def _urls(html: str, base_url: str, prefix: str) -> list[str]:
 
 
 def _event_urls(html: str, base_url: str) -> list[str]:
-    return _urls(html, base_url, EVENT_PATH_PREFIX)
+    return _path_urls(html, base_url, EVENT_PATH_PREFIX)
 
 
 def _tour_urls(html: str, base_url: str) -> list[str]:
-    return _urls(html, base_url, TOUR_PATH_PREFIX)
+    return _path_urls(html, base_url, TOUR_PATH_PREFIX)
 
 
 def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
@@ -58,9 +63,14 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
             return
         if not isinstance(value, dict):
             return
+
         types = value.get("@type")
         types = types if isinstance(types, list) else [types]
-        is_event = any(isinstance(t, str) and (t == "Event" or t.rsplit("/", 1)[-1].endswith("Event")) for t in types)
+        is_event = any(
+            isinstance(t, str)
+            and (t == "Event" or t.rsplit("/", 1)[-1].endswith("Event"))
+            for t in types
+        )
         name = value.get("name")
         start = value.get("startDate")
         if is_event and name and start:
@@ -94,6 +104,7 @@ def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
                 source_url=source_url,
                 description=value.get("description"),
             )
+
         for key, child in value.items():
             if key == "@type":
                 continue
@@ -113,12 +124,21 @@ def _parse_event_page(text: str, page_url: str, now: datetime) -> list:
     soup = BeautifulSoup(text, "lxml")
     lines = [" ".join(x.split()) for x in soup.stripped_strings if " ".join(x.split())]
     if not lines:
-        lines = [" ".join(x.strip("#*- ").split()) for x in text.splitlines() if " ".join(x.strip("#*- ").split())]
+        lines = [
+            " ".join(x.strip("#*- ").split())
+            for x in text.splitlines()
+            if " ".join(x.strip("#*- ").split())
+        ]
     return _parse_lines(lines, page_url, now.year, now)
 
 
-def _future(events: list[RawEvent], now: datetime) -> list[RawEvent]:
-    return [event for event in events if event.start_at is not None and event.start_at >= now and "Тернопіль" in " ".join(filter(None, [event.venue, event.address, event.title]))]
+def _fetch_markdown(client: httpx.Client, url: str, headers: dict[str, str]) -> str:
+    response = client.get(
+        "https://r.jina.ai/" + url,
+        headers={**headers, "x-no-cache": "true"},
+    )
+    response.raise_for_status()
+    return response.text
 
 
 def collect(timeout: float = 20.0):
@@ -136,42 +156,61 @@ def collect(timeout: float = 20.0):
         response.raise_for_status()
         urls = _event_urls(response.text, BASE_URL)
 
-        # The city page is dynamically rendered for normal browsers. Its tour
-        # catalogue is also linked from the server-rendered homepage, so use
-        # tour pages as a second discovery path when direct event links are absent.
+        # The city page is dynamically rendered and may expose no event links to
+        # ordinary HTTP clients. Discover tours from the home page, then follow
+        # their event links; tour pages are server-rendered and stable.
         if not urls:
-            home = client.get(HOME_URL)
-            home.raise_for_status()
-            tour_urls = _tour_urls(home.text, HOME_URL)
-            for tour_url in tour_urls[:30]:
+            pages_to_scan = [HOME_URL]
+            for page_url in pages_to_scan:
                 try:
-                    tour = client.get(tour_url)
-                    tour.raise_for_status()
-                    urls.extend(_event_urls(tour.text, tour_url))
-                except httpx.HTTPError:
+                    page = client.get(page_url)
+                    page.raise_for_status()
+                    tour_urls = _tour_urls(page.text, page_url)
+                    if not tour_urls:
+                        markdown = _fetch_markdown(client, page_url, headers)
+                        tour_urls = _tour_urls(markdown, page_url)
+                    for tour_url in tour_urls[:50]:
+                        try:
+                            tour_page = client.get(tour_url)
+                            tour_page.raise_for_status()
+                            urls.extend(_event_urls(tour_page.text, tour_url))
+                            if not _event_urls(tour_page.text, tour_url):
+                                markdown = _fetch_markdown(client, tour_url, headers)
+                                urls.extend(_event_urls(markdown, tour_url))
+                        except (httpx.HTTPError, ValueError):
+                            continue
+                except (httpx.HTTPError, ValueError):
                     continue
 
+        # Last resort: ask Jina for the city page itself. It can expose event
+        # links even when the origin response is blocked or JS-only.
         if not urls:
-            jina = client.get("https://r.jina.ai/" + BASE_URL, headers={**headers, "x-no-cache": "true"})
-            jina.raise_for_status()
-            urls = _event_urls(jina.text, BASE_URL)
+            try:
+                markdown = _fetch_markdown(client, BASE_URL, headers)
+                urls = _event_urls(markdown, BASE_URL)
+            except (httpx.HTTPError, ValueError):
+                urls = []
 
         recovered: dict[str, RawEvent] = {}
-        for event_url in list(dict.fromkeys(urls))[:100]:
+        for event_url in urls[:100]:
             try:
                 page = client.get(event_url)
                 page.raise_for_status()
-                parsed = _future(_raw_jsonld(page.text, event_url), now)
+                parsed = [
+                    e for e in _raw_jsonld(page.text, event_url)
+                    if e.start_at is not None and e.start_at >= now
+                ]
                 if not parsed:
                     parsed = _parse_event_page(page.text, event_url, now)
-                    parsed = _future(parsed, now)
                 if not parsed:
-                    jina = client.get("https://r.jina.ai/" + event_url, headers={**headers, "x-no-cache": "true"})
-                    jina.raise_for_status()
-                    parsed = _future(_raw_jsonld(jina.text, event_url), now)
+                    markdown = _fetch_markdown(client, event_url, headers)
+                    parsed = [
+                        e for e in _raw_jsonld(markdown, event_url)
+                        if e.start_at is not None and e.start_at >= now
+                    ]
                     if not parsed:
-                        parsed = _future(_parse_event_page(jina.text, event_url, now), now)
-            except (httpx.HTTPError, ValueError):
+                        parsed = _parse_event_page(markdown, event_url, now)
+            except (httpx.HTTPError, ValueError, TypeError):
                 continue
             for event in parsed:
                 recovered[event.external_id] = event
