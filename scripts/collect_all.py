@@ -5,8 +5,9 @@ from pathlib import Path
 
 from app.collectors.registry import COLLECTORS
 from app.db.session import SessionLocal, init_db
+from app.services.canonical_events import build_canonical_events
 from app.services.data_quality import find_duplicate_candidates, validate_events
-from app.services.events import upsert_events
+from app.services.events import apply_canonical_group_keys, upsert_events
 from app.services.source_runs import finish_run, start_run
 
 # A zero-result source is treated as a collector regression unless the source
@@ -88,6 +89,12 @@ def main() -> None:
             print(f"{source_name}: ERROR {exc}")
 
     duplicates = find_duplicate_candidates(events_by_source)
+    canonical_events = build_canonical_events(events_by_source)
+    multi_source_canonical = [event for event in canonical_events if len(event.sources) >= 2]
+
+    with SessionLocal() as session:
+        canonical_group_changes = apply_canonical_group_keys(session, canonical_events)
+
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
@@ -95,6 +102,22 @@ def main() -> None:
             for source, events in events_by_source.items()
         },
         "totals": totals,
+        "canonical": {
+            "raw_events": totals["collected"],
+            "canonical_events": len(canonical_events),
+            "multi_source_events": len(multi_source_canonical),
+            "group_key_changes": canonical_group_changes,
+            "multi_source": [
+                {
+                    "key": event.key,
+                    "title": event.title,
+                    "start_at": event.start_at,
+                    "venue": event.venue,
+                    "sources": [asdict(source) for source in event.sources],
+                }
+                for event in multi_source_canonical
+            ],
+        },
         "quality": {
             "invalid_events": quality_errors,
             "warnings": quality_warnings,
@@ -110,6 +133,12 @@ def main() -> None:
     print(
         f"QUALITY SUMMARY: invalid_events={quality_errors} "
         f"warnings={quality_warnings} duplicate_candidates={len(duplicates)}"
+    )
+    print(
+        f"CANONICAL SUMMARY: raw_events={totals['collected']} "
+        f"canonical_events={len(canonical_events)} "
+        f"multi_source_events={len(multi_source_canonical)} "
+        f"group_key_changes={canonical_group_changes}"
     )
     for duplicate in duplicates:
         print(
