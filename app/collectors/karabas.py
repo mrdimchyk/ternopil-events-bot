@@ -14,55 +14,27 @@ BASE_URL = "https://ternopil.karabas.com/"
 SOURCE_NAME = "KARABAS"
 JINA_PREFIX = "https://r.jina.ai/"
 DEBUG_DIR = Path("artifacts/karabas")
-MONTHS = {
-    "січня": 1,
-    "лютого": 2,
-    "березня": 3,
-    "квітня": 4,
-    "травня": 5,
-    "червня": 6,
-    "липня": 7,
-    "серпня": 8,
-    "вересня": 9,
-    "жовтня": 10,
-    "листопада": 11,
-    "грудня": 12,
-}
-MONTH_SLUGS = [
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
-]
+MONTHS = {"січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5, "червня": 6, "липня": 7, "серпня": 8, "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12}
+MONTH_SLUGS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
 MONTH_PATTERN = "|".join(MONTHS)
-CATEGORY_LABELS = {
-    "концерти", "театри", "дітям", "stand-up", "клуби", "фестивалі", "інші",
-}
-DATE_HEADING_RE = re.compile(
-    rf"^\d{{1,2}}\s+.*?({MONTH_PATTERN}).*?20\d{{2}}\s*$", re.I
-)
-LOCATION_RE = re.compile(
-    rf"^(?:\[)?\*{{0,2}}Тернопіль\*{{0,2}}(?:\]\([^)]*\))?\s*,?\s*(\d{{1,2}}\s+{MONTH_PATTERN}\s+20\d{{2}},\s*\d{{1,2}}:\d{{2}})\s*$",
-    re.I,
-)
-PRICE_RE = re.compile(
-    r"^(?:\d[\d\s]*(?:-|–)\s*\d[\d\s]*|\d[\d\s]*)\s*(?:грн|UAH)$", re.I
-)
+CATEGORY_LABELS = {"концерти", "театри", "дітям", "stand-up", "клуби", "фестивалі", "інші"}
+DATE_HEADING_RE = re.compile(rf"^\**\d{{1,2}}\**\s+.*?\(?{MONTH_PATTERN}\)?.*?20\d{{2}}\s*$", re.I)
+LOCATION_RE = re.compile(rf"^(?:\[)?\*{{0,2}}Тернопіль\*{{0,2}}(?:\]\([^)]*\))?\s*,?\s*(\d{{1,2}}\s+{MONTH_PATTERN}\s+20\d{{2}},\s*\d{{1,2}}:\d{{2}})\s*$", re.I)
+PRICE_RE = re.compile(r"^(?:\d[\d\s]*(?:-|–)\s*\d[\d\s]*|\d[\d\s]*)\s*(?:грн|UAH)$", re.I)
 MARKDOWN_LINK_RE = re.compile(r"^\[([^\]]+)\]\(([^)]+)\)$")
 
 
 def _clean(s: str) -> str:
     s = s.replace("\xa0", " ")
-    s = re.sub(r"\*\*", "", s)
-    s = re.sub(r"(?<!\w)_(.*?)_(?!\w)", r"\1", s)
+    s = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", s)
+    s = re.sub(r"\*\*([^*]*)\*\*", r"\1", s)
+    s = re.sub(r"(?<!\w)_([^_]*)_(?!\w)", r"\1", s)
     s = re.sub(r"`([^`]*)`", r"\1", s)
     return " ".join(s.split()).strip()
 
 
 def _external_id(url: str, title: str, start: datetime) -> str:
     return hashlib.sha256(f"{url}|{title}|{start.isoformat()}".encode()).hexdigest()[:32]
-
-
-def _id(url: str, title: str, start: datetime) -> str:
-    return _external_id(url, title, start)
 
 
 def _parse_date_time(value: str) -> datetime | None:
@@ -104,10 +76,7 @@ def _parse_price_line(line: str) -> str | None:
 
 def _event_blocks(lines: list[str]) -> list[list[str]]:
     date_indices = [i for i, line in enumerate(lines) if _is_date_heading(line)]
-    return [
-        lines[idx:date_indices[pos + 1] if pos + 1 < len(date_indices) else len(lines)]
-        for pos, idx in enumerate(date_indices)
-    ]
+    return [lines[idx:date_indices[pos + 1] if pos + 1 < len(date_indices) else len(lines)] for pos, idx in enumerate(date_indices)]
 
 
 def _title_and_url(line: str, source_url: str) -> tuple[str, str]:
@@ -126,38 +95,26 @@ def _label_and_url(line: str, source_url: str) -> tuple[str, str | None]:
 
 def _location_start(line: str) -> datetime | None:
     match = LOCATION_RE.fullmatch(_clean(line))
-    if not match:
-        return None
-    return _parse_date_time(match.group(1))
+    return _parse_date_time(match.group(1)) if match else None
 
 
 def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawEvent]:
     lines = [_clean(x.strip("#*- ")) for x in text.splitlines() if _clean(x.strip("#*- "))]
     events: list[RawEvent] = []
-
     for block_lines in _event_blocks(lines):
-        location_idx = next(
-            (i for i, line in enumerate(block_lines) if _location_start(line)), None
-        )
+        location_idx = next((i for i, line in enumerate(block_lines) if _location_start(line)), None)
         if location_idx is None or location_idx < 2:
             continue
-
         start = _location_start(block_lines[location_idx])
         if not start or start < now:
             continue
-
-        title_candidates = [
-            line for line in block_lines[1:location_idx] if not _is_category_line(line)
-        ]
+        title_candidates = [line for line in block_lines[1:location_idx] if not _is_category_line(line)]
         if not title_candidates:
             continue
         title, event_url = _title_and_url(title_candidates[-1], source_url)
         if not title:
             continue
-
-        category_line = next(
-            (line for line in block_lines[1:location_idx] if _is_category_line(line)), None
-        )
+        category_line = next((line for line in block_lines[1:location_idx] if _is_category_line(line)), None)
         category = None
         if category_line:
             category_lower = category_line.lower()
@@ -167,33 +124,13 @@ def _extract_event_cards(text: str, source_url: str, now: datetime) -> list[RawE
                 category = "theatre"
             elif "stand-up" in category_lower:
                 category = "standup"
-
         venue_line = block_lines[location_idx + 1] if location_idx + 1 < len(block_lines) else ""
-        venue, _venue_url = _label_and_url(venue_line, source_url)
+        venue, _ = _label_and_url(venue_line, source_url)
         status_or_price = block_lines[location_idx + 2] if location_idx + 2 < len(block_lines) else None
-        if status_or_price and re.search(
-            r"\b(Скасовано|Перенесено|Cancelled|Transferred|Продано)\b",
-            _clean(status_or_price),
-            re.I,
-        ):
+        if status_or_price and re.search(r"\b(Скасовано|Перенесено|Cancelled|Transferred|Продано)\b", _clean(status_or_price), re.I):
             continue
         price_text = _parse_price_line(status_or_price) if status_or_price else None
-
-        events.append(
-            RawEvent(
-                external_id=_external_id(event_url, title, start),
-                title=title,
-                category=category,
-                start_at=start,
-                venue=venue,
-                address=None,
-                price_text=price_text,
-                ticket_url=event_url,
-                source_url=event_url,
-                description=None,
-            )
-        )
-
+        events.append(RawEvent(external_id=_external_id(event_url, title, start), title=title, category=category, start_at=start, venue=venue, address=None, price_text=price_text, ticket_url=event_url, source_url=event_url, description=None))
     return list({e.external_id: e for e in events}.values())
 
 
@@ -202,10 +139,7 @@ def _extract_events(text: str, source_url: str, now: datetime) -> list[RawEvent]
 
 
 def _month_urls(now: datetime) -> list[str]:
-    return [
-        f"{BASE_URL}{MONTH_SLUGS[(now.month - 1 + offset) % 12]}/"
-        for offset in range(6)
-    ]
+    return [f"{BASE_URL}{MONTH_SLUGS[(now.month - 1 + offset) % 12]}/" for offset in range(6)]
 
 
 def _get_page(client: httpx.Client, url: str, timeout: float) -> str:
@@ -217,7 +151,6 @@ def _get_page(client: httpx.Client, url: str, timeout: float) -> str:
         response = client.get(url, timeout=timeout)
         response.raise_for_status()
         text = response.text
-
     if os.getenv("KARABAS_DEBUG") == "1":
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         slug = url.rstrip("/").split("/")[-1] or "root"
@@ -237,11 +170,7 @@ def _html_to_markdownish(text: str, base_url: str) -> str:
 
 def collect(timeout: float = 30.0):
     now = datetime.now()
-    headers = {
-        "User-Agent": "TernopilEventsBot/1.0 (+https://github.com/mrdimchyk/ternopil-events-bot)",
-        "Accept": "text/plain,text/markdown,text/html;q=0.9,*/*;q=0.8",
-        "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
-    }
+    headers = {"User-Agent": "TernopilEventsBot/1.0 (+https://github.com/mrdimchyk/ternopil-events-bot)", "Accept": "text/plain,text/markdown,text/html;q=0.9,*/*;q=0.8", "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7"}
     events: list[RawEvent] = []
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
         for url in _month_urls(now):
