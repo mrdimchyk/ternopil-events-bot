@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from urllib.parse import urljoin
 
 import httpx
@@ -14,18 +15,22 @@ EVENT_PATH_PREFIX = "/events/"
 
 def _event_urls(html: str, base_url: str) -> list[str]:
     soup = BeautifulSoup(html, "lxml")
+    candidates: list[str] = []
+    candidates.extend(
+        anchor.get("href")
+        for anchor in soup.select('a[href*="/events/"]')
+        if isinstance(anchor.get("href"), str)
+    )
+    candidates.extend(re.findall(r"https://teatr\.org\.ua/events/[A-Za-z0-9_./%-]+", html))
+
     urls: list[str] = []
     seen: set[str] = set()
-    for anchor in soup.select('a[href*="/events/"]'):
-        href = anchor.get("href")
-        if not isinstance(href, str):
+    for href in candidates:
+        url = urljoin(base_url, href).rstrip(")],.;")
+        if EVENT_PATH_PREFIX not in url or url in seen:
             continue
-        url = urljoin(base_url, href)
-        if EVENT_PATH_PREFIX not in url:
-            continue
-        if url not in seen:
-            seen.add(url)
-            urls.append(url)
+        seen.add(url)
+        urls.append(url)
     return urls
 
 
@@ -67,14 +72,17 @@ def collect(timeout: float = 20.0):
         recovered: dict[str, object] = {}
         for event_url in urls[:50]:
             try:
-                page = client.get(event_url)
-                page.raise_for_status()
-                parsed = _parse_event_page(page.text, event_url, now)
+                parsed = collect_jsonld(event_url, SOURCE_NAME, timeout=timeout)
+                parsed = [event for event in parsed if event.start_at is not None and event.start_at >= now]
                 if not parsed:
-                    jina = client.get("https://r.jina.ai/" + event_url, headers={**headers, "x-no-cache": "true"})
-                    jina.raise_for_status()
-                    parsed = _parse_event_page(jina.text, event_url, now)
-            except httpx.HTTPError:
+                    page = client.get(event_url)
+                    page.raise_for_status()
+                    parsed = _parse_event_page(page.text, event_url, now)
+                    if not parsed:
+                        jina = client.get("https://r.jina.ai/" + event_url, headers={**headers, "x-no-cache": "true"})
+                        jina.raise_for_status()
+                        parsed = _parse_event_page(jina.text, event_url, now)
+            except (httpx.HTTPError, ValueError):
                 continue
             for event in parsed:
                 recovered[event.external_id] = event
