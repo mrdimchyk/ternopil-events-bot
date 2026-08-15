@@ -1,9 +1,16 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
+
+
+@dataclass(slots=True)
+class CanonicalDbEvent:
+    representative: Event
+    sources: list[Event]
 
 
 def events_for_day(session: Session, day: datetime) -> list[Event]:
@@ -17,3 +24,26 @@ def events_for_day(session: Session, day: datetime) -> list[Event]:
             .order_by(Event.start_at, Event.title)
         ).all()
     )
+
+
+def canonical_events_for_day(session: Session, day: datetime) -> list[CanonicalDbEvent]:
+    """Return one display event per canonical group while preserving all source offers."""
+    events = events_for_day(session, day)
+    groups: dict[str, list[Event]] = {}
+    for event in events:
+        groups.setdefault(event.group_key, []).append(event)
+
+    result: list[CanonicalDbEvent] = []
+    for members in groups.values():
+        representative = sorted(
+            members,
+            key=lambda event: (
+                event.start_at or datetime.max,
+                -len(event.title),
+                event.source_id,
+            ),
+        )[0]
+        result.append(CanonicalDbEvent(representative=representative, sources=members))
+
+    result.sort(key=lambda item: (item.representative.start_at or datetime.max, item.representative.title))
+    return result
