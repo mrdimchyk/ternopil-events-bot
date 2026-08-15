@@ -45,8 +45,9 @@ def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str], no
         notification_label = "🔕 Вимкнути нагадування" if event.group_key in notification_keys else "🔔 Нагадати за 24 год"
         rows.append([InlineKeyboardButton(text=favorite_label, callback_data=f"favorite:{event.group_key}")])
         rows.append([InlineKeyboardButton(text=notification_label, callback_data=f"notify:{event.group_key}")])
-        for index, source in enumerate([s for s in item.sources if s.ticket_url], start=1):
-            label = f"🎟️ {event.title[:38]}" if len(item.sources) == 1 else f"🎟️ {event.title[:32]} — квитки {index}"
+        offers = [s for s in item.sources if s.ticket_url]
+        for index, source in enumerate(offers, start=1):
+            label = f"🎟️ {event.title[:38]}" if len(offers) == 1 else f"🎟️ {event.title[:32]} — квитки {index}"
             rows.append([InlineKeyboardButton(text=label, url=source.ticket_url)])
     rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -56,10 +57,9 @@ async def _send_events(message: Message, events: list[CanonicalDbEvent], heading
     if not events:
         await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
-    user_id = message.from_user.id
     with SessionLocal() as session:
-        favorite_keys = favorite_group_keys(session, user_id)
-        notification_keys = notification_group_keys(session, user_id)
+        favorite_keys = favorite_group_keys(session, message.from_user.id)
+        notification_keys = notification_group_keys(session, message.from_user.id)
     text = f"📅 <b>{heading}</b>\n\n" + "\n\n".join(_format_event(item) for item in events[:20])
     if len(events) > 20:
         text += f"\n\n…і ще {len(events) - 20} подій."
@@ -159,13 +159,12 @@ async def category_events(callback: CallbackQuery):
 @router.callback_query(lambda c: c.data and c.data.startswith("favorite:"))
 async def toggle_favorite(callback: CallbackQuery):
     group_key = callback.data.split(":", 1)[1]
-    user_id = callback.from_user.id
     with SessionLocal() as session:
-        if group_key in favorite_group_keys(session, user_id):
-            remove_favorite(session, user_id, group_key)
+        if group_key in favorite_group_keys(session, callback.from_user.id):
+            remove_favorite(session, callback.from_user.id, group_key)
             text = "Видалено з обраного ❤️"
         else:
-            add_favorite(session, user_id, group_key)
+            add_favorite(session, callback.from_user.id, group_key)
             text = "Додано в обране 💛"
     await callback.answer(text)
 
@@ -194,8 +193,9 @@ async def favorites(callback: CallbackQuery):
 @router.callback_query(lambda c: c.data == "notifications")
 async def notifications(callback: CallbackQuery):
     await callback.answer()
-    keys = notification_group_keys(SessionLocal(), callback.from_user.id)
-    await callback.message.answer(f"🔔 <b>Сповіщення</b>\n\nАктивних нагадувань: {len(keys)}\n\nНагадування надсилаються за 24 години до обраної події.", reply_markup=main_menu())
+    with SessionLocal() as session:
+        keys = notification_group_keys(session, callback.from_user.id)
+    await callback.message.answer(f"🔔 <b>Сповіщення</b>\n\nАктивних нагадувань: {len(keys)}\n\nНагадування надсилаються за 24 години до події.", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data == "menu")
