@@ -1,3 +1,4 @@
+from datetime import datetime
 from urllib.parse import urljoin
 
 import httpx
@@ -27,7 +28,7 @@ def _event_urls(html: str, base_url: str) -> list[str]:
     return urls
 
 
-def _parse_event_page(text: str, page_url: str, now) -> list:
+def _parse_event_page(text: str, page_url: str, now: datetime) -> list:
     soup = BeautifulSoup(text, "lxml")
     lines = [" ".join(x.split()) for x in soup.stripped_strings if " ".join(x.split())]
     if not lines:
@@ -40,7 +41,7 @@ def collect(timeout: float = 20.0):
     if events:
         return events
 
-    now = __import__("datetime").datetime.now()
+    now = datetime.now()
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36",
         "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
