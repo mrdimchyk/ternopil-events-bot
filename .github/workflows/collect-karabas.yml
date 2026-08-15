@@ -13,28 +13,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install dependencies
         run: pip install -e .
-
       - name: Validate collector registry
         run: python -c "from app.collectors.registry import validate_collectors; validate_collectors()"
-
       - name: Capture KARABAS production responses
         continue-on-error: true
         run: python scripts/diagnose_karabas.py
-
       - name: Collect all sources
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONUNBUFFERED: "1"
         run: python scripts/collect_all.py
-
+      - name: Upload production quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-report-${{ github.run_id }}
+          path: quality-report.json
+          if-no-files-found: warn
       - name: Upload KARABAS production responses
         if: always()
         uses: actions/upload-artifact@v4
