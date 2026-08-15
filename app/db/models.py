@@ -52,6 +52,16 @@ class Event(Base):
     changes = relationship("EventChange", back_populates="event", cascade="all, delete-orphan")
 
 
+class Favorite(Base):
+    __tablename__ = "favorites"
+    __table_args__ = (UniqueConstraint("user_id", "group_key", name="uq_favorite_user_group"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    group_key: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class EventChange(Base):
     __tablename__ = "event_changes"
 
