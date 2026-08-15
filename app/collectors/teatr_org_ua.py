@@ -36,8 +36,12 @@ def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
     return urls
 
 
-def _event_urls(text: str, base_url: str) -> list[str]: return _path_urls(text, base_url, EVENT_PATH_PREFIX)
-def _tour_urls(text: str, base_url: str) -> list[str]: return _path_urls(text, base_url, TOUR_PATH_PREFIX)
+def _event_urls(text: str, base_url: str) -> list[str]:
+    return _path_urls(text, base_url, EVENT_PATH_PREFIX)
+
+
+def _tour_urls(text: str, base_url: str) -> list[str]:
+    return _path_urls(text, base_url, TOUR_PATH_PREFIX)
 
 
 def _raw_jsonld(text: str, page_url: str) -> list[RawEvent]:
@@ -84,29 +88,36 @@ def _parse_event_page(text: str, page_url: str, now: datetime) -> list[RawEvent]
 
 
 def _markdown_city_events(text: str, now: datetime) -> list[RawEvent]:
-    lines = [" ".join(line.strip().split()) for line in text.splitlines() if line.strip()]
+    normalized = text.replace("\u00a0", " ").replace("\r", "")
+    lines = [re.sub(r"\s+", " ", line.strip()) for line in normalized.splitlines() if line.strip()]
     events: dict[str, RawEvent] = {}
-    date_re = re.compile(r"^(\d{1,2})\s+(" + "|".join(MONTHS) + r")\s+(\d{4}),\s+(\d{1,2}):(\d{2})$")
+    month_pattern = "|".join(MONTHS)
+    date_re = re.compile(r"^(?:[#>*-]+\s*)?(\d{1,2})\s+(" + month_pattern + r")\s+(\d{4}),\s*(\d{1,2}):(\d{2})$", re.I)
     for index, line in enumerate(lines):
-        match = date_re.match(line.lstrip("#*- "))
-        if not match: continue
+        clean = line.lstrip("#>*- ").strip()
+        match = date_re.match(clean)
+        if not match:
+            continue
         day, month_name, year, hour, minute = match.groups()
-        start = datetime(int(year), MONTHS[month_name], int(day), int(hour), int(minute))
-        if start < now: continue
-        location_index = next((j for j in range(index + 1, min(index + 4, len(lines))) if re.match(r"^Тернопіль(?:,|$)", lines[j], re.I)), None)
-        if location_index is None: continue
+        start = datetime(int(year), MONTHS[month_name.lower()], int(day), int(hour), int(minute))
+        if start < now:
+            continue
+        location_index = next((j for j in range(index + 1, min(index + 6, len(lines))) if re.match(r"^Тернопіль(?:,|$)", lines[j].lstrip("#>*- ").strip(), re.I)), None)
+        if location_index is None:
+            continue
         title = None
-        for candidate in reversed(lines[max(0, index - 4):index]):
-            candidate = candidate.lstrip("#*- ")
-            if candidate and not candidate.startswith("Image:") and candidate not in {"Події у місті", "Вистави та концерти у Тернополі"}:
+        for candidate in reversed(lines[max(0, index - 8):index]):
+            candidate = candidate.lstrip("#>*- ").strip()
+            if candidate and not candidate.startswith("Image:") and candidate not in {"Події у місті", "Вистави та концерти у Тернополі"} and not re.match(r"^(Детальніше|Купити квиток|від\s+\d+\s*грн)$", candidate, re.I):
                 title = candidate
                 break
-        if not title: continue
-        location = lines[location_index]
+        if not title:
+            continue
+        location = lines[location_index].lstrip("#>*- ").strip()
         venue = location.split(",", 1)[1].strip() if "," in location else None
         price = None
-        for candidate in lines[location_index + 1:min(location_index + 3, len(lines))]:
-            price_match = re.search(r"від\s+([0-9\s]+)\s*грн", candidate, re.I)
+        for candidate in lines[location_index + 1:min(location_index + 4, len(lines))]:
+            price_match = re.search(r"(?:від\s*)?([0-9][0-9\s]*)\s*грн", candidate, re.I)
             if price_match:
                 price = int(price_match.group(1).replace(" ", "")); break
         external_id = hashlib.sha256(f"{BASE_URL}|{title}|{start.isoformat()}".encode()).hexdigest()[:32]
@@ -162,13 +173,13 @@ def collect(timeout: float = 20.0):
         urls = _event_urls(response.text, BASE_URL)
         direct_events = _future_city_events(response.text, now)
         if direct_events: return direct_events
-        if not urls:
-            try:
-                markdown = _fetch_markdown(client, BASE_URL, headers)
-                direct_events = _future_city_events(markdown, now)
-                if direct_events: return direct_events
-                urls = _event_urls(markdown, BASE_URL)
-            except (httpx.HTTPError, ValueError, TypeError): pass
+        try:
+            markdown = _fetch_markdown(client, BASE_URL, headers)
+            direct_events = _future_city_events(markdown, now)
+            if direct_events: return direct_events
+            markdown_urls = _event_urls(markdown, BASE_URL)
+            if markdown_urls: urls.extend(markdown_urls)
+        except (httpx.HTTPError, ValueError, TypeError): pass
         if not urls:
             try:
                 page = client.get(HOME_URL); page.raise_for_status()
