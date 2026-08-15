@@ -3,11 +3,9 @@ from datetime import datetime, timedelta
 from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
-from app.db.models import Event
 from app.db.session import SessionLocal
+from app.services.event_queries import CanonicalDbEvent, canonical_events_for_day
 
 router = Router()
 
@@ -28,30 +26,31 @@ def _day_range(offset: int) -> tuple[datetime, datetime]:
     return target, target + timedelta(days=1)
 
 
-def _format_event(event: Event) -> str:
+def _format_event(item: CanonicalDbEvent) -> str:
+    event = item.representative
     time = event.start_at.strftime("%H:%M") if event.start_at else "Час уточнюється"
     venue = f"📍 {event.venue.name}" if event.venue else "📍 Тернопіль"
-    price = f"💰 {event.price_text}\n" if event.price_text else ""
+    prices = sorted({source.price_text for source in item.sources if source.price_text})
+    price = f"💰 {', '.join(prices)}\n" if prices else ""
     return f"🎟️ <b>{event.title}</b>\n🕐 {time}\n{venue}\n{price}"
 
 
-def _events_for_day(offset: int) -> list[Event]:
-    start, end = _day_range(offset)
+def _events_for_day(offset: int) -> list[CanonicalDbEvent]:
+    start, _ = _day_range(offset)
     with SessionLocal() as session:
-        query = (
-            select(Event)
-            .options(selectinload(Event.venue))
-            .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
-            .order_by(Event.start_at, Event.title)
-        )
-        return list(session.scalars(query).all())
+        return canonical_events_for_day(session, start)
 
 
-def _events_keyboard(events: list[Event]) -> InlineKeyboardMarkup:
+def _events_keyboard(events: list[CanonicalDbEvent]) -> InlineKeyboardMarkup:
     rows = []
-    for event in events:
-        if event.ticket_url:
-            rows.append([InlineKeyboardButton(text=f"🎟️ {event.title[:45]}", url=event.ticket_url)])
+    for item in events:
+        event = item.representative
+        offers = [source for source in item.sources if source.ticket_url]
+        if not offers:
+            continue
+        for index, source in enumerate(offers, start=1):
+            label = f"🎟️ {event.title[:38]}" if len(offers) == 1 else f"🎟️ {event.title[:32]} — квитки {index}"
+            rows.append([InlineKeyboardButton(text=label, url=source.ticket_url)])
     rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -63,7 +62,7 @@ async def _send_day(message: Message, offset: int) -> None:
         await message.answer(f"📅 <b>{label.capitalize()}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
     text = f"📅 <b>Що цікавого {label} у Тернополі</b>\n\n"
-    text += "\n\n".join(_format_event(event) for event in events[:20])
+    text += "\n\n".join(_format_event(item) for item in events[:20])
     if len(events) > 20:
         text += f"\n\n…і ще {len(events) - 20} подій."
     await message.answer(text, reply_markup=_events_keyboard(events[:20]))
