@@ -12,13 +12,16 @@ def test_karabas_parses_month_heading_with_weekday_and_apostrophe():
     assert parsed == datetime(2026, 8, 19, 19, 0)
 
 
+def test_karabas_parses_real_jina_markdown_date_heading():
+    value = "**7** Пн _вересня ’ 2026_"
+    from app.collectors.karabas import _is_date_heading
+
+    assert _is_date_heading(value)
+
+
 def test_karabas_real_august_2026_page_fixture():
     text = FIXTURE.read_text(encoding="utf-8")
-    events = _extract_event_cards(
-        text,
-        "https://ternopil.karabas.com/august/",
-        datetime(2026, 8, 15, 0, 0),
-    )
+    events = _extract_event_cards(text, "https://ternopil.karabas.com/august/", datetime(2026, 8, 15, 0, 0))
 
     assert len(events) == 7
     assert [event.title for event in events] == [
@@ -52,11 +55,7 @@ def test_karabas_uses_specific_event_url_from_card():
 300 - 650 грн
 КУПИТИ
 """
-    events = _extract_event_cards(
-        text,
-        "https://ternopil.karabas.com/august/",
-        datetime(2026, 8, 15, 0, 0),
-    )
+    events = _extract_event_cards(text, "https://ternopil.karabas.com/august/", datetime(2026, 8, 15, 0, 0))
     assert len(events) == 1
     assert events[0].title == "«Кіно для дорослих»"
     assert events[0].ticket_url == "https://ternopil.karabas.com/event/kino-dlya-doroslyh/"
@@ -64,20 +63,16 @@ def test_karabas_uses_specific_event_url_from_card():
 
 
 def test_karabas_parses_jina_markdown_location_line():
-    text = """19 Ср _серпня ’ 2026_
+    text = """**19** Ср _серпня ’ 2026_
 [![Image](https://images.karabas.com/test.jpg)](https://ternopil.karabas.com/kino-dlya-doroslykh-4/)
 [«Кіно для дорослих»](https://ternopil.karabas.com/kino-dlya-doroslykh-4/)
 театри
 **Тернопіль**, 19 серпня 2026, 18:00
 Тернопільський театр
-300 - 650 грн
+**300 - 650 грн**
 [КУПИТИ](https://ternopil.karabas.com/kino-dlya-doroslykh-4/order/)
 """
-    events = _extract_event_cards(
-        text,
-        "https://ternopil.karabas.com/august/",
-        datetime(2026, 8, 15, 0, 0),
-    )
+    events = _extract_event_cards(text, "https://ternopil.karabas.com/august/", datetime(2026, 8, 15, 0, 0))
     assert len(events) == 1
     assert events[0].start_at == datetime(2026, 8, 19, 18, 0)
     assert events[0].ticket_url == "https://ternopil.karabas.com/kino-dlya-doroslykh-4/"
@@ -92,9 +87,5 @@ def test_karabas_skips_cancelled_real_card():
 Парковка ТРЦ Подоляни
 Скасовано
 """
-    events = _extract_event_cards(
-        text,
-        "https://ternopil.karabas.com/august/",
-        datetime(2026, 8, 15, 0, 0),
-    )
+    events = _extract_event_cards(text, "https://ternopil.karabas.com/august/", datetime(2026, 8, 15, 0, 0))
     assert events == []
