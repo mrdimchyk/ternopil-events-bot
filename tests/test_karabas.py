@@ -63,6 +63,27 @@ def test_karabas_uses_specific_event_url_from_card():
     assert events[0].source_url == events[0].ticket_url
 
 
+def test_karabas_parses_jina_markdown_location_line():
+    text = """19 Ср _серпня ’ 2026_
+[![Image](https://images.karabas.com/test.jpg)](https://ternopil.karabas.com/kino-dlya-doroslykh-4/)
+[«Кіно для дорослих»](https://ternopil.karabas.com/kino-dlya-doroslykh-4/)
+театри
+**Тернопіль**, 19 серпня 2026, 18:00
+Тернопільський театр
+300 - 650 грн
+[КУПИТИ](https://ternopil.karabas.com/kino-dlya-doroslykh-4/order/)
+"""
+    events = _extract_event_cards(
+        text,
+        "https://ternopil.karabas.com/august/",
+        datetime(2026, 8, 15, 0, 0),
+    )
+    assert len(events) == 1
+    assert events[0].start_at == datetime(2026, 8, 19, 18, 0)
+    assert events[0].ticket_url == "https://ternopil.karabas.com/kino-dlya-doroslykh-4/"
+    assert events[0].price_text == "300 - 650 грн"
+
+
 def test_karabas_skips_cancelled_real_card():
     text = """28 Пт серпня ’ 2026
 БЕЗ ОБМЕЖЕНЬ. «Сильні серця»
