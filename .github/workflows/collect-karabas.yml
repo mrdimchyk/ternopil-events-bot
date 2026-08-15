@@ -39,6 +39,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: karabas-production-responses
+          name: karabas-production-responses-${{ github.run_id }}
           path: karabas-production-responses/
-          if-no-files-found: error
+          if-no-files-found: warn
