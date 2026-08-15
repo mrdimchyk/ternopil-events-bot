@@ -27,10 +27,10 @@ def _path_urls(text: str, base_url: str, path_prefix: str) -> list[str]:
     )
     escaped = re.escape(path_prefix)
     candidates.extend(
-        re.findall(rf"https?://teatr\\.org\\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text)
+        re.findall(rf"https?://teatr\.org\.ua{escaped}[A-Za-z0-9_./%?=&-]+", text)
     )
     candidates.extend(
-        re.findall(rf"(?:https?://teatr\\.org\\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text)
+        re.findall(rf"(?:https?://teatr\.org\.ua)?{escaped}[A-Za-z0-9_./%?=&-]+", text)
     )
 
     urls: list[str] = []
@@ -156,34 +156,28 @@ def collect(timeout: float = 20.0):
         response.raise_for_status()
         urls = _event_urls(response.text, BASE_URL)
 
-        # The city page is dynamically rendered and may expose no event links to
-        # ordinary HTTP clients. Discover tours from the home page, then follow
-        # their event links; tour pages are server-rendered and stable.
         if not urls:
-            pages_to_scan = [HOME_URL]
-            for page_url in pages_to_scan:
-                try:
-                    page = client.get(page_url)
-                    page.raise_for_status()
-                    tour_urls = _tour_urls(page.text, page_url)
-                    if not tour_urls:
-                        markdown = _fetch_markdown(client, page_url, headers)
-                        tour_urls = _tour_urls(markdown, page_url)
-                    for tour_url in tour_urls[:50]:
-                        try:
-                            tour_page = client.get(tour_url)
-                            tour_page.raise_for_status()
-                            urls.extend(_event_urls(tour_page.text, tour_url))
-                            if not _event_urls(tour_page.text, tour_url):
-                                markdown = _fetch_markdown(client, tour_url, headers)
-                                urls.extend(_event_urls(markdown, tour_url))
-                        except (httpx.HTTPError, ValueError):
-                            continue
-                except (httpx.HTTPError, ValueError):
-                    continue
+            try:
+                page = client.get(HOME_URL)
+                page.raise_for_status()
+                tour_urls = _tour_urls(page.text, HOME_URL)
+                if not tour_urls:
+                    markdown = _fetch_markdown(client, HOME_URL, headers)
+                    tour_urls = _tour_urls(markdown, HOME_URL)
+                for tour_url in tour_urls[:50]:
+                    try:
+                        tour_page = client.get(tour_url)
+                        tour_page.raise_for_status()
+                        tour_event_urls = _event_urls(tour_page.text, tour_url)
+                        if not tour_event_urls:
+                            markdown = _fetch_markdown(client, tour_url, headers)
+                            tour_event_urls = _event_urls(markdown, tour_url)
+                        urls.extend(tour_event_urls)
+                    except (httpx.HTTPError, ValueError):
+                        continue
+            except (httpx.HTTPError, ValueError):
+                pass
 
-        # Last resort: ask Jina for the city page itself. It can expose event
-        # links even when the origin response is blocked or JS-only.
         if not urls:
             try:
                 markdown = _fetch_markdown(client, BASE_URL, headers)
