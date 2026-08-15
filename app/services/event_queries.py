@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
@@ -51,5 +51,45 @@ def canonicalize_db_events(events: list[Event]) -> list[CanonicalDbEvent]:
 
 
 def canonical_events_for_day(session: Session, day: datetime) -> list[CanonicalDbEvent]:
-    """Return one display event per canonical group while preserving all source offers."""
     return canonicalize_db_events(events_for_day(session, day))
+
+
+def canonical_events_for_range(session: Session, start: datetime, end: datetime) -> list[CanonicalDbEvent]:
+    events = list(
+        session.scalars(
+            select(Event)
+            .options(selectinload(Event.venue))
+            .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
+            .order_by(Event.start_at, Event.title)
+        ).all()
+    )
+    return canonicalize_db_events(events)
+
+
+def category_counts(session: Session, start: datetime, end: datetime) -> list[tuple[str, int]]:
+    rows = session.execute(
+        select(func.coalesce(Event.category, "Інше"), func.count(func.distinct(Event.group_key)))
+        .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
+        .group_by(func.coalesce(Event.category, "Інше"))
+        .order_by(func.count(func.distinct(Event.group_key)).desc())
+    ).all()
+    return [(str(category), int(count)) for category, count in rows]
+
+
+def canonical_events_for_category(
+    session: Session, category: str, start: datetime, end: datetime
+) -> list[CanonicalDbEvent]:
+    events = list(
+        session.scalars(
+            select(Event)
+            .options(selectinload(Event.venue))
+            .where(
+                Event.start_at >= start,
+                Event.start_at < end,
+                Event.status == "active",
+                func.coalesce(Event.category, "Інше") == category,
+            )
+            .order_by(Event.start_at, Event.title)
+        ).all()
+    )
+    return canonicalize_db_events(events)
