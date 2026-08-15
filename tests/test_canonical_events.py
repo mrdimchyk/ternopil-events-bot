@@ -1,17 +1,17 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.collectors.base import RawEvent
 from app.services.canonical_events import build_canonical_events
 
 
-def event(external_id: str, title: str, source_url: str) -> RawEvent:
+def event(external_id: str, title: str, source_url: str, start_at: datetime | None = None) -> RawEvent:
     return RawEvent(
         external_id=external_id,
         title=title,
         category="theatre",
-        start_at=datetime(2026, 10, 8, 18, 0),
+        start_at=start_at or datetime(2026, 10, 8, 18, 0),
         venue="Тернопільський драмтеатр",
         address="Тернопіль",
         price_text="500 грн",
@@ -39,6 +39,20 @@ def test_different_events_remain_separate():
     result = build_canonical_events({"KARABAS": [first, second]})
 
     assert len(result) == 2
+
+
+def test_aware_and_naive_datetimes_can_be_compared():
+    naive = event("k1", "Я бачу, вас цікавить пітьма", "https://karabas.com/1", datetime(2026, 10, 8, 18, 0))
+    aware = event(
+        "t1",
+        "Я бачу, вас цікавить пітьма",
+        "https://teatr.org.ua/1",
+        datetime(2026, 10, 8, 18, 0, tzinfo=timezone.utc),
+    )
+    result = build_canonical_events({"KARABAS": [naive], "Teatr.org.ua": [aware]})
+
+    assert len(result) == 1
+    assert len(result[0].sources) == 2
 
 
 def test_real_production_duplicate_fixture_forms_three_canonical_events():
