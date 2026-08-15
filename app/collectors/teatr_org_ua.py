@@ -4,6 +4,7 @@ from urllib.parse import urljoin
 import httpx
 from bs4 import BeautifulSoup
 
+from app.collectors.generic_jsonld import collect_jsonld
 from app.collectors.line_catalog import _parse_lines, collect_line_catalog
 
 SOURCE_NAME = "Teatr.org.ua"
@@ -37,6 +38,14 @@ def _parse_event_page(text: str, page_url: str, now: datetime) -> list:
 
 
 def collect(timeout: float = 20.0):
+    try:
+        structured = collect_jsonld(BASE_URL, SOURCE_NAME, timeout=timeout)
+        structured = [event for event in structured if event.start_at is not None and event.start_at >= datetime.now()]
+        if structured:
+            return structured
+    except (httpx.HTTPError, ValueError):
+        pass
+
     events = collect_line_catalog([BASE_URL], timeout=timeout)
     if events:
         return events
