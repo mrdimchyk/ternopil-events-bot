@@ -1,0 +1,38 @@
+name: Telegram chat ID discovery
+
+on:
+  workflow_dispatch:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - name: Read recent bot updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          response="$(curl --fail-with-body --silent --show-error \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?limit=20")"
+          python - "$response" <<'PY'
+          import json
+          import sys
+          data = json.loads(sys.argv[1])
+          if not data.get("ok"):
+              raise SystemExit("Telegram API returned ok=false")
+          seen = set()
+          for update in data.get("result", []):
+              message = update.get("message") or update.get("edited_message")
+              chat = (message or {}).get("chat") or {}
+              chat_id = chat.get("id")
+              if chat_id in seen:
+                  continue
+              if chat_id is not None:
+                  seen.add(chat_id)
+                  title = chat.get("title") or chat.get("username") or chat.get("first_name") or "unknown"
+                  print(f"chat_id={chat_id} title={title}")
+          if not seen:
+              print("NO_CHATS_FOUND")
+          PY
