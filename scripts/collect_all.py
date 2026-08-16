@@ -8,6 +8,7 @@ from app.db.session import SessionLocal, init_db
 from app.services.canonical_events import build_canonical_events
 from app.services.data_quality import find_duplicate_candidates, validate_events
 from app.services.events import apply_canonical_group_keys, upsert_events
+from app.services.source_health import source_health_report
 from app.services.source_runs import finish_run, start_run
 
 # A zero-result source is treated as a collector regression unless the source
@@ -88,6 +89,14 @@ def main() -> None:
             totals["failed"] += 1
             print(f"{source_name}: ERROR {exc}")
 
+    source_names = [source_name for source_name, _, _ in COLLECTORS]
+    with SessionLocal() as session:
+        health = source_health_report(
+            session,
+            source_names,
+            allow_empty_sources=ALLOW_EMPTY_SOURCES,
+        )
+
     duplicates = find_duplicate_candidates(events_by_source)
     canonical_events = build_canonical_events(events_by_source)
     multi_source_canonical = [event for event in canonical_events if len(event.sources) >= 2]
@@ -98,9 +107,13 @@ def main() -> None:
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
-            source: {"collected": len(events)}
+            source: {
+                "collected": len(events),
+                **health["sources"].get(source, {}),
+            }
             for source, events in events_by_source.items()
         },
+        "source_health": health,
         "totals": totals,
         "canonical": {
             "raw_events": totals["collected"],
@@ -134,6 +147,14 @@ def main() -> None:
         f"QUALITY SUMMARY: invalid_events={quality_errors} "
         f"warnings={quality_warnings} duplicate_candidates={len(duplicates)}"
     )
+    print(f"SOURCE HEALTH: overall={health['overall']}")
+    for source, item in health["sources"].items():
+        print(
+            f"SOURCE HEALTH: {source} status={item['status']} "
+            f"latest_collected={item['latest_collected']} "
+            f"median_collected={item['median_collected']} "
+            f"message={item['message']}"
+        )
     print(
         f"CANONICAL SUMMARY: raw_events={totals['collected']} "
         f"canonical_events={len(canonical_events)} "
@@ -153,10 +174,11 @@ def main() -> None:
         f"changed={totals['changed']} failed={totals['failed']}"
     )
 
-    if totals["failed"] or quality_errors:
+    if totals["failed"] or quality_errors or health["overall"] == "degraded":
         raise RuntimeError(
-            f"Collection completed with {totals['failed']} source failure(s) and "
-            f"{quality_errors} data-quality error(s); do not treat the run as healthy."
+            f"Collection completed with {totals['failed']} source failure(s), "
+            f"{quality_errors} data-quality error(s), source_health={health['overall']}; "
+            "do not treat the run as healthy."
         )
 
 
