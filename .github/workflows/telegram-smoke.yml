@@ -1,0 +1,29 @@
+name: Telegram smoke test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  telegram-smoke:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - name: Check Telegram bot token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          response="$(curl --fail-with-body --silent --show-error \
+            --get \
+            --data-urlencode "token=$TELEGRAM_BOT_TOKEN" \
+            https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe)"
+          python - "$response" <<'PY'
+          import json
+          import sys
+          data = json.loads(sys.argv[1])
+          if not data.get("ok"):
+              raise SystemExit("Telegram API returned ok=false")
+          user = data.get("result", {})
+          print(f"Telegram API OK: @{user.get('username', '<unknown>')}")
+          PY
