@@ -42,31 +42,13 @@ def test_due_notification_handles_multiple_source_events_in_same_group():
     now = datetime(2026, 8, 16, 12, 0)
     db.add_all(
         [
-            Event(
-                external_id="karabas-1",
-                group_key="g1",
-                title="Test from KARABAS",
-                start_at=now + timedelta(hours=23),
-                source_id=1,
-                source_url="https://karabas.com/event/1",
-                status="active",
-            ),
-            Event(
-                external_id="teatr-1",
-                group_key="g1",
-                title="Test from Teatr",
-                start_at=now + timedelta(hours=24),
-                source_id=2,
-                source_url="https://teatr.org.ua/event/1",
-                status="active",
-            ),
+            Event(external_id="karabas-1", group_key="g1", title="Test from KARABAS", start_at=now + timedelta(hours=23), source_id=1, source_url="https://karabas.com/event/1", status="active"),
+            Event(external_id="teatr-1", group_key="g1", title="Test from Teatr", start_at=now + timedelta(hours=24), source_id=2, source_url="https://teatr.org.ua/event/1", status="active"),
         ]
     )
     db.flush()
     subscribe_favorite(db, 10000000001, "g1")
-
     due = due_notifications(db, now)
-
     assert len(due) == 1
     assert due[0][1].event_id == 1
     assert due[0][1].title == "Test from KARABAS"
@@ -77,33 +59,47 @@ def test_due_notification_uses_event_id_as_deterministic_tiebreaker():
     now = datetime(2026, 8, 16, 12, 0)
     db.add_all(
         [
-            Event(
-                external_id="source-a",
-                group_key="g1",
-                title="First inserted",
-                start_at=now + timedelta(hours=23),
-                source_id=1,
-                source_url="https://example.com/a",
-                status="active",
-            ),
-            Event(
-                external_id="source-b",
-                group_key="g1",
-                title="Second inserted",
-                start_at=now + timedelta(hours=23),
-                source_id=2,
-                source_url="https://example.com/b",
-                status="active",
-            ),
+            Event(external_id="source-a", group_key="g1", title="First inserted", start_at=now + timedelta(hours=23), source_id=1, source_url="https://example.com/a", status="active"),
+            Event(external_id="source-b", group_key="g1", title="Second inserted", start_at=now + timedelta(hours=23), source_id=2, source_url="https://example.com/b", status="active"),
         ]
     )
     db.flush()
     subscribe_favorite(db, 10000000001, "g1")
-
     due = due_notifications(db, now)
-
     assert len(due) == 1
     assert due[0][1].event_id == 1
+
+
+def test_notification_state_survives_session_restart(tmp_path):
+    db_path = tmp_path / "notification-persistence.sqlite"
+    url = f"sqlite:///{db_path}"
+    now = datetime(2026, 8, 16, 12, 0)
+
+    engine1 = create_engine(url)
+    Base.metadata.create_all(engine1)
+    Session1 = sessionmaker(bind=engine1, expire_on_commit=False)
+    db1 = Session1()
+    db1.add(Event(external_id="persistent-1", group_key="persistent-group", title="Persistent event", start_at=now + timedelta(hours=23), source_id=1, source_url="https://example.com/persistent", status="active"))
+    db1.flush()
+    assert subscribe_favorite(db1, 10000000001, "persistent-group") is True
+    due = due_notifications(db1, now)
+    assert len(due) == 1
+    due[0][0].last_notified_at = now
+    db1.commit()
+    db1.close()
+    engine1.dispose()
+
+    engine2 = create_engine(url)
+    Session2 = sessionmaker(bind=engine2, expire_on_commit=False)
+    db2 = Session2()
+    subscription = db2.query(FavoriteNotification).one()
+    event = db2.query(Event).one()
+    assert subscription.group_key == "persistent-group"
+    assert subscription.last_notified_at == now
+    assert event.external_id == "persistent-1"
+    assert due_notifications(db2, now) == []
+    db2.close()
+    engine2.dispose()
 
 
 def test_unsubscribe_removes_subscription():
