@@ -29,6 +29,27 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONUNBUFFERED: "1"
         run: python scripts/collect_all.py
+      - name: Publish source health summary
+        if: always()
+        run: |
+          if [ -f quality-report.json ]; then
+            echo "## Source health" >> "$GITHUB_STEP_SUMMARY"
+            python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          report = json.loads(Path("quality-report.json").read_text(encoding="utf-8"))
+          health = report.get("source_health", {})
+          print(f"**Overall:** `{health.get('overall', 'unknown')}`")
+          print("")
+          print("| Source | Status | Latest | Median |")
+          print("|---|---|---:|---:|")
+          for name, item in health.get("sources", {}).items():
+              print(f"| {name} | `{item.get('status')}` | {item.get('latest_collected')} | {item.get('median_collected')} |")
+          PY
+          else
+            echo "## Source health" >> "$GITHUB_STEP_SUMMARY"
+            echo "No quality-report.json was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Upload production quality report
         if: always()
         uses: actions/upload-artifact@v4
