@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base, Event
+from app.db.user_models import FavoriteNotification
 from app.services.notification_worker import deliver_due_notifications
 from app.services.notifications import subscribe_favorite
 
@@ -48,6 +49,23 @@ async def test_worker_delivers_once_and_second_run_is_idempotent():
 
 
 @pytest.mark.asyncio
+async def test_worker_deduplicates_multi_source_event_for_one_subscription():
+    db = make_session()
+    now = datetime(2026, 8, 16, 12, 0)
+    db.add_all([
+        Event(external_id="karabas-1", group_key="g1", title="Event from KARABAS", start_at=now + timedelta(hours=23), source_id=1, source_url="https://karabas.com/event/1", status="active"),
+        Event(external_id="teatr-1", group_key="g1", title="Event from Teatr", start_at=now + timedelta(hours=24), source_id=2, source_url="https://teatr.org.ua/event/1", status="active"),
+    ])
+    db.flush()
+    subscribe_favorite(db, 10000000003, "g1")
+
+    sender = FakeSender()
+    assert await deliver_due_notifications(db, sender, now) == 1
+    assert len(sender.messages) == 1
+    assert "Event from KARABAS" in sender.messages[0][1]
+
+
+@pytest.mark.asyncio
 async def test_worker_does_not_mark_notification_when_delivery_fails():
     db = make_session()
     now = datetime(2026, 8, 16, 12, 0)
@@ -58,5 +76,5 @@ async def test_worker_does_not_mark_notification_when_delivery_fails():
     with pytest.raises(RuntimeError):
         await deliver_due_notifications(db, FailingSender(), now)
 
-    subscription = db.query(__import__("app.db.user_models", fromlist=["FavoriteNotification"]).FavoriteNotification).one()
+    subscription = db.query(FavoriteNotification).one()
     assert subscription.last_notified_at is None
