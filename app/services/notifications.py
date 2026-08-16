@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -8,6 +8,13 @@ from app.db.models import Event, EventChange
 from app.db.user_models import FavoriteNotification, TelegramUser
 
 DEFAULT_NOTIFY_BEFORE_MINUTES = 24 * 60
+
+
+def _utc_naive(value: datetime) -> datetime:
+    """Normalize aware/naive datetimes to naive UTC for internal comparisons."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass(slots=True)
@@ -59,6 +66,7 @@ def notification_group_keys(session: Session, telegram_id: int) -> set[str]:
 
 
 def due_notifications(session: Session, now: datetime) -> list[tuple[FavoriteNotification, NotificationItem]]:
+    now_utc = _utc_naive(now)
     rows = session.scalars(select(FavoriteNotification).where(FavoriteNotification.enabled.is_(True))).all()
     result = []
     for subscription in rows:
@@ -77,10 +85,12 @@ def due_notifications(session: Session, now: datetime) -> list[tuple[FavoriteNot
         ).first()
         if event is None or event.start_at is None:
             continue
-        target = event.start_at - timedelta(minutes=subscription.notify_before_minutes)
-        if target > now or (subscription.last_notified_at is not None and subscription.last_notified_at >= target):
+        event_start = _utc_naive(event.start_at)
+        target = event_start - timedelta(minutes=subscription.notify_before_minutes)
+        last_notified = _utc_naive(subscription.last_notified_at) if subscription.last_notified_at is not None else None
+        if target > now_utc or (last_notified is not None and last_notified >= target):
             continue
-        result.append((subscription, NotificationItem(event.id, event.group_key, event.title, event.start_at, event.venue.name if event.venue else None, event.price_text, event.ticket_url)))
+        result.append((subscription, NotificationItem(event.id, event.group_key, event.title, event_start, event.venue.name if event.venue else None, event.price_text, event.ticket_url)))
     return result
 
 
