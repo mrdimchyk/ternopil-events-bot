@@ -33,6 +33,34 @@ def test_matching_sources_are_one_canonical_event():
     assert {source.source for source in result[0].sources} == {"KARABAS", "Teatr.org.ua"}
 
 
+def test_canonical_event_preserves_each_source_ticket_and_price():
+    first = event("k1", "Я бачу, вас цікавить пітьма", "https://karabas.com/1")
+    second = event("t1", "Я бачу, вас цікавить пітьма", "https://teatr.org.ua/1")
+    second.price_text = "600 грн"
+
+    canonical = build_canonical_events({"KARABAS": [first], "Teatr.org.ua": [second]})[0]
+    sources = {source.source: source for source in canonical.sources}
+
+    assert sources["KARABAS"].source_url == "https://karabas.com/1"
+    assert sources["KARABAS"].ticket_url == "https://example.com/tickets/k1"
+    assert sources["KARABAS"].price_text == "500 грн"
+    assert sources["Teatr.org.ua"].source_url == "https://teatr.org.ua/1"
+    assert sources["Teatr.org.ua"].ticket_url == "https://example.com/tickets/t1"
+    assert sources["Teatr.org.ua"].price_text == "600 грн"
+
+
+def test_canonical_key_is_stable_when_source_order_changes():
+    karabas = event("k1", "Я бачу, вас цікавить пітьма", "https://karabas.com/1")
+    teatr = event("t1", "Я бачу, вас цікавить пітьма", "https://teatr.org.ua/1")
+
+    first = build_canonical_events({"KARABAS": [karabas], "Teatr.org.ua": [teatr]})[0]
+    second = build_canonical_events({"Teatr.org.ua": [teatr], "KARABAS": [karabas]})[0]
+
+    assert first.key == second.key
+    assert [source.source for source in first.sources] == ["KARABAS", "Teatr.org.ua"]
+    assert [source.source for source in second.sources] == ["KARABAS", "Teatr.org.ua"]
+
+
 def test_different_events_remain_separate():
     first = event("k1", "Я бачу, вас цікавить пітьма", "https://karabas.com/1")
     second = event("k2", "Хор Гомін", "https://karabas.com/2")
