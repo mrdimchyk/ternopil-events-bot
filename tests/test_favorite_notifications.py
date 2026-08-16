@@ -37,6 +37,75 @@ def test_due_notification_is_emitted_once():
     assert due_notifications(db, now) == []
 
 
+def test_due_notification_handles_multiple_source_events_in_same_group():
+    db = session()
+    now = datetime(2026, 8, 16, 12, 0)
+    db.add_all(
+        [
+            Event(
+                external_id="karabas-1",
+                group_key="g1",
+                title="Test from KARABAS",
+                start_at=now + timedelta(hours=23),
+                source_id=1,
+                source_url="https://karabas.com/event/1",
+                status="active",
+            ),
+            Event(
+                external_id="teatr-1",
+                group_key="g1",
+                title="Test from Teatr",
+                start_at=now + timedelta(hours=24),
+                source_id=2,
+                source_url="https://teatr.org.ua/event/1",
+                status="active",
+            ),
+        ]
+    )
+    db.flush()
+    subscribe_favorite(db, 10000000001, "g1")
+
+    due = due_notifications(db, now)
+
+    assert len(due) == 1
+    assert due[0][1].event_id == 1
+    assert due[0][1].title == "Test from KARABAS"
+
+
+def test_due_notification_uses_event_id_as_deterministic_tiebreaker():
+    db = session()
+    now = datetime(2026, 8, 16, 12, 0)
+    db.add_all(
+        [
+            Event(
+                external_id="source-a",
+                group_key="g1",
+                title="First inserted",
+                start_at=now + timedelta(hours=23),
+                source_id=1,
+                source_url="https://example.com/a",
+                status="active",
+            ),
+            Event(
+                external_id="source-b",
+                group_key="g1",
+                title="Second inserted",
+                start_at=now + timedelta(hours=23),
+                source_id=2,
+                source_url="https://example.com/b",
+                status="active",
+            ),
+        ]
+    )
+    db.flush()
+    subscribe_favorite(db, 10000000001, "g1")
+
+    due = due_notifications(db, now)
+
+    assert len(due) == 1
+    assert due[0][1].event_id == 1
+
+
 def test_unsubscribe_removes_subscription():
     db = session()
     subscribe_favorite(db, 10000000001, "g1")
