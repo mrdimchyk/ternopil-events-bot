@@ -62,9 +62,19 @@ def due_notifications(session: Session, now: datetime) -> list[tuple[FavoriteNot
     rows = session.scalars(select(FavoriteNotification).where(FavoriteNotification.enabled.is_(True))).all()
     result = []
     for subscription in rows:
-        event = session.scalar(
-            select(Event).options(joinedload(Event.venue)).where(Event.group_key == subscription.group_key, Event.status == "active", Event.start_at >= now).order_by(Event.start_at)
-        )
+        # A canonical group may have one Event row per source. Never use
+        # Session.scalar() here: multiple physical events for the same
+        # group_key are expected in a multi-source database.
+        event = session.scalars(
+            select(Event)
+            .options(joinedload(Event.venue))
+            .where(
+                Event.group_key == subscription.group_key,
+                Event.status == "active",
+                Event.start_at >= now,
+            )
+            .order_by(Event.start_at.asc(), Event.id.asc())
+        ).first()
         if event is None or event.start_at is None:
             continue
         target = event.start_at - timedelta(minutes=subscription.notify_before_minutes)
