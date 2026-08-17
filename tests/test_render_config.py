@@ -4,15 +4,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_render_worker_config_matches_production_runtime():
+def test_render_uses_free_web_service_for_webhook_runtime():
     render = (REPO_ROOT / "render.yaml").read_text(encoding="utf-8")
     dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    assert "type: worker" in render
+    assert "type: web" in render
+    assert "plan: free" in render
     assert "runtime: docker" in render
     assert "region: frankfurt" in render
     assert "dockerfilePath: ./Dockerfile" in render
     assert "name: ternopil-events-bot" in render
+    assert "healthCheckPath: /" in render
     assert "key: TELEGRAM_BOT_TOKEN" in render
     assert "key: DATABASE_URL" in render
     assert "key: CITY_NAME" in render
