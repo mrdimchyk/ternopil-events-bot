@@ -78,3 +78,36 @@ async def test_worker_does_not_mark_notification_when_delivery_fails():
 
     subscription = db.query(FavoriteNotification).one()
     assert subscription.last_notified_at is None
+
+
+class FailSecondSender:
+    def __init__(self):
+        self.calls = []
+
+    async def send_message(self, chat_id: int, text: str):
+        self.calls.append(chat_id)
+        if len(self.calls) == 2:
+            raise RuntimeError("second delivery failed")
+        return object()
+
+
+@pytest.mark.asyncio
+async def test_worker_persists_successful_delivery_before_later_failure():
+    db = make_session()
+    now = datetime(2026, 8, 16, 12, 0)
+    db.add_all([
+        Event(external_id="e3", group_key="g3", title="First event", start_at=now + timedelta(hours=23), source_id=1, source_url="https://example.com/e3", status="active"),
+        Event(external_id="e4", group_key="g4", title="Second event", start_at=now + timedelta(hours=23), source_id=1, source_url="https://example.com/e4", status="active"),
+    ])
+    db.flush()
+    subscribe_favorite(db, 10000000003, "g3")
+    subscribe_favorite(db, 10000000004, "g4")
+    subscriptions = {row.group_key: row for row in db.query(FavoriteNotification).all()}
+
+    with pytest.raises(RuntimeError, match="second delivery failed"):
+        await deliver_due_notifications(db, FailSecondSender(), now)
+
+    db.refresh(subscriptions["g3"])
+    db.refresh(subscriptions["g4"])
+    assert subscriptions["g3"].last_notified_at == now
+    assert subscriptions["g4"].last_notified_at is None
