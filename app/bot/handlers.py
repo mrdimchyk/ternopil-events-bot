@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from app.config import settings
 from app.db.session import SessionLocal
 from app.services.event_queries import CanonicalDbEvent, canonical_events_for_category, canonical_events_for_range, canonical_events_for_day, category_counts
 from app.services.event_search import search_canonical_events
@@ -11,6 +13,10 @@ from app.services.favorites import add_favorite, favorite_events, favorite_group
 from app.services.notifications import notification_group_keys, subscribe_favorite, unsubscribe_favorite
 
 router = Router()
+
+
+def _local_now() -> datetime:
+    return datetime.now(ZoneInfo(settings.timezone)).replace(tzinfo=None)
 
 
 def main_menu() -> InlineKeyboardMarkup:
@@ -23,7 +29,7 @@ def main_menu() -> InlineKeyboardMarkup:
 
 
 def _day_range(offset: int) -> tuple[datetime, datetime]:
-    now = datetime.now()
+    now = _local_now()
     target = (now + timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0)
     return target, target + timedelta(days=1)
 
@@ -75,7 +81,7 @@ async def _send_day(message: Message, offset: int) -> None:
 
 
 def _weekend_range() -> tuple[datetime, datetime]:
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
     days_to_saturday = (5 - today.weekday()) % 7
     saturday = today + timedelta(days=days_to_saturday)
     return saturday, saturday + timedelta(days=2)
@@ -92,7 +98,7 @@ async def search(message: Message):
     if not query:
         await message.answer("🔎 Напишіть запит після команди, наприклад:\n/search театр\n/search Гомін")
         return
-    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
     with SessionLocal() as session:
         events = search_canonical_events(session, query, start=start)
     await _send_events(message, events, f"Результати пошуку: «{query}»")
@@ -122,7 +128,7 @@ async def weekend_events(callback: CallbackQuery):
 @router.callback_query(lambda c: c.data == "categories")
 async def categories(callback: CallbackQuery):
     await callback.answer()
-    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=30)
     with SessionLocal() as session:
         counts = category_counts(session, start, end)
@@ -149,7 +155,7 @@ async def category_events(callback: CallbackQuery):
     if not category:
         await callback.message.answer("Категорії оновилися. Відкрийте їх ще раз.", reply_markup=main_menu())
         return
-    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=30)
     with SessionLocal() as session:
         events = canonical_events_for_category(session, category, start, end)
@@ -186,7 +192,7 @@ async def toggle_notification(callback: CallbackQuery):
 async def favorites(callback: CallbackQuery):
     await callback.answer()
     with SessionLocal() as session:
-        events = favorite_events(session, callback.from_user.id, datetime.now())
+        events = favorite_events(session, callback.from_user.id, _local_now())
     await _send_events(callback.message, events, "Моє обране")
 
 
