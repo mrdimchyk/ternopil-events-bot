@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base, Event
+from app.jobs.daily_digest import build_tomorrow_digest
 from app.services.notifications import tomorrow_events
 
 
@@ -45,3 +48,24 @@ def test_tomorrow_events_ignore_inactive_events():
     db.commit()
 
     assert tomorrow_events(db, now) == []
+
+
+def test_tomorrow_digest_formats_events_and_caps_output():
+    events = [
+        SimpleNamespace(
+            title=f"Event {index}",
+            start_at=datetime(2026, 8, 18, 19, 30, tzinfo=timezone.utc),
+            price_text="250 грн" if index == 0 else None,
+            ticket_url="https://example.com/tickets" if index == 0 else None,
+        )
+        for index in range(16)
+    ]
+
+    with patch("app.jobs.daily_digest.tomorrow_events", return_value=events):
+        digest = build_tomorrow_digest(datetime(2026, 8, 17, 8, 0, tzinfo=timezone.utc))
+
+    assert "🌙 <b>Що цікавого завтра в Тернополі</b>" in digest
+    assert "🎟️ <b>Event 0</b> — 19:30 · 250 грн" in digest
+    assert "🎫 https://example.com/tickets" in digest
+    assert "Event 14" in digest
+    assert "Event 15" not in digest
