@@ -16,7 +16,7 @@ def make_session():
 def test_tomorrow_events_are_timezone_aware_and_deduplicated():
     db = make_session()
     now = datetime(2026, 8, 16, 21, 30, tzinfo=timezone.utc)
-    tomorrow_local = datetime(2026, 8, 17, 18, 0, tzinfo=timezone.utc)
+    tomorrow_local = datetime(2026, 8, 18, 18, 0, tzinfo=timezone.utc)
     db.add_all([
         Event(external_id="k1", group_key="g1", title="KARABAS event", start_at=tomorrow_local, source_id=1, source_url="https://karabas.example/1", status="active"),
         Event(external_id="t1", group_key="g1", title="Teatr duplicate", start_at=tomorrow_local + timedelta(hours=1), source_id=2, source_url="https://teatr.example/1", status="active"),
