@@ -1,0 +1,17 @@
+services:
+  - type: worker
+    name: ternopil-events-bot
+    runtime: docker
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CITY_NAME
+        value: Ternopil
+      - key: TIMEZONE
+        value: Europe/Kyiv
