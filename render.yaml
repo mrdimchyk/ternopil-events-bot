@@ -1,10 +1,12 @@
 services:
-  - type: worker
+  - type: web
     name: ternopil-events-bot
     runtime: docker
+    plan: free
     region: frankfurt
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    healthCheckPath: /
     maxShutdownDelaySeconds: 30
     envVars:
       - key: TELEGRAM_BOT_TOKEN
