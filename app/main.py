@@ -3,6 +3,8 @@ import os
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from app.bot.handlers import router
@@ -14,7 +16,10 @@ async def run_webhook_app() -> web.Application:
     if not settings.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
 
-    bot = Bot(settings.telegram_bot_token)
+    bot = Bot(
+        settings.telegram_bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     dp = Dispatcher()
     dp.include_router(router)
 
