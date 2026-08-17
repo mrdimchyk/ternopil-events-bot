@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from aiohttp import web
@@ -50,7 +51,7 @@ async def run_webhook_app() -> web.Application:
 
 if __name__ == "__main__":
     init_db()
-    application = __import__("asyncio").run(run_webhook_app())
+    application = asyncio.run(run_webhook_app())
     web.run_app(
         application,
         host="0.0.0.0",
