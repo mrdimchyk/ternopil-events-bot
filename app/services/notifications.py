@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import settings
 from app.db.models import Event, EventChange
 from app.db.user_models import FavoriteNotification, TelegramUser
 
@@ -65,14 +67,41 @@ def notification_group_keys(session: Session, telegram_id: int) -> set[str]:
     return set(session.scalars(select(FavoriteNotification.group_key).where(FavoriteNotification.user_id == user.id, FavoriteNotification.enabled.is_(True))).all())
 
 
+def tomorrow_events(session: Session, now: datetime | None = None) -> list[Event]:
+    """Return unique active events occurring tomorrow in the configured city timezone."""
+    current = now or datetime.now(timezone.utc)
+    timezone_info = ZoneInfo(settings.timezone)
+    local_now = current.astimezone(timezone_info) if current.tzinfo else current.replace(tzinfo=timezone_info)
+    tomorrow = local_now.date() + timedelta(days=1)
+    start_local = datetime.combine(tomorrow, datetime.min.time(), tzinfo=timezone_info)
+    end_local = start_local + timedelta(days=1)
+
+    events = session.scalars(
+        select(Event)
+        .options(joinedload(Event.venue))
+        .where(
+            Event.status == "active",
+            Event.start_at >= start_local,
+            Event.start_at < end_local,
+        )
+        .order_by(Event.start_at.asc(), Event.id.asc())
+    ).all()
+
+    unique: list[Event] = []
+    seen_groups: set[str] = set()
+    for event in events:
+        if event.group_key in seen_groups:
+            continue
+        seen_groups.add(event.group_key)
+        unique.append(event)
+    return unique
+
+
 def due_notifications(session: Session, now: datetime) -> list[tuple[FavoriteNotification, NotificationItem]]:
     now_utc = _utc_naive(now)
     rows = session.scalars(select(FavoriteNotification).where(FavoriteNotification.enabled.is_(True))).all()
     result = []
     for subscription in rows:
-        # A canonical group may have one Event row per source. Never use
-        # Session.scalar() here: multiple physical events for the same
-        # group_key are expected in a multi-source database.
         event = session.scalars(
             select(Event)
             .options(joinedload(Event.venue))
