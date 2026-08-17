@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Protocol
 
 from aiogram import Bot
@@ -40,7 +40,7 @@ async def notification_worker(bot: Bot, interval_seconds: int = 60) -> None:
     """
     while True:
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             with SessionLocal() as session:
                 try:
                     delivered = await deliver_due_notifications(session, bot, now)
