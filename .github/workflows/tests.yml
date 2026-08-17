@@ -37,3 +37,5 @@ jobs:
         run: pytest -q
       - name: Ruff check
         run: ruff check .
+      - name: Build production Docker image
+        run: docker build --pull -t ternopil-events-bot:ci .
