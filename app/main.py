@@ -7,10 +7,11 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from sqlalchemy import text
 
 from app.bot.handlers import router
 from app.config import settings
-from app.db.session import init_db
+from app.db.session import SessionLocal, init_db
 
 
 async def run_webhook_app() -> web.Application:
@@ -41,7 +42,16 @@ async def run_webhook_app() -> web.Application:
         await bot.session.close()
 
     async def health(_request: web.Request) -> web.Response:
-        return web.Response(text="ok")
+        """Report readiness only when the production DB is reachable."""
+        try:
+            with SessionLocal() as session:
+                session.execute(text("SELECT 1"))
+        except Exception as exc:
+            return web.json_response(
+                {"status": "degraded", "database": "unavailable", "error": type(exc).__name__},
+                status=503,
+            )
+        return web.json_response({"status": "ok", "database": "ok"})
 
     app = web.Application()
     app.router.add_get("/", health)
