@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.collectors.base import RawEvent
+from app.config import settings
 from app.db.models import Event, EventChange, Source, Venue
 from app.services.canonical_events import CanonicalEvent
 from app.services.event_identity import make_group_key
@@ -19,6 +21,15 @@ def _record_change(session, event_id: int, change_type: str, field_name: str | N
     ))
 
 
+def _event_datetime_utc(value: datetime | None) -> datetime | None:
+    """Normalize collector event times to timezone-aware UTC for timestamptz."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=ZoneInfo(settings.timezone))
+    return value.astimezone(timezone.utc)
+
+
 def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_url: str) -> int:
     source = session.scalar(select(Source).where(Source.name == source_name))
     if not source:
@@ -27,7 +38,7 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
         session.flush()
 
     changed = 0
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
 
     for raw in raw_events:
         event = session.scalar(select(Event).where(
@@ -44,6 +55,7 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
                 session.flush()
 
         group_key = make_group_key(raw.title, raw.start_at, raw.venue)
+        normalized_start_at = _event_datetime_utc(raw.start_at)
 
         if event is None:
             event = Event(
@@ -52,7 +64,7 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
                 source_id=source.id,
                 title=raw.title,
                 category=raw.category,
-                start_at=raw.start_at,
+                start_at=normalized_start_at,
                 venue_id=venue.id if venue else None,
                 price_text=raw.price_text,
                 ticket_url=raw.ticket_url,
@@ -71,7 +83,7 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
             "group_key": (event.group_key, group_key),
             "title": (event.title, raw.title),
             "category": (event.category, raw.category),
-            "start_at": (event.start_at, raw.start_at),
+            "start_at": (event.start_at, normalized_start_at),
             "price_text": (event.price_text, raw.price_text),
             "ticket_url": (event.ticket_url, raw.ticket_url),
         }
