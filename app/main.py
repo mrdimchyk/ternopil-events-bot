@@ -79,6 +79,7 @@ async def run_webhook_app() -> web.Application:
 
         app["polling_task_factory"] = start_polling
 
+    app.on_shutdown.append(on_shutdown)
     setup_application(app, dp, bot=bot)
     return app
 
