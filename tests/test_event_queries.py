@@ -1,10 +1,18 @@
 from datetime import datetime
 
-from app.db.models import Event
+from app.db.models import Event, Venue
 from app.services.event_queries import canonicalize_db_events
 
 
-def make_event(event_id: int, group_key: str, title: str, source_id: int, ticket_url: str | None, start_at=None):
+def make_event(
+    event_id: int,
+    group_key: str,
+    title: str,
+    source_id: int,
+    ticket_url: str | None,
+    start_at=None,
+    venue_name: str | None = None,
+):
     return Event(
         id=event_id,
         external_id=f"e{event_id}",
@@ -15,6 +23,7 @@ def make_event(event_id: int, group_key: str, title: str, source_id: int, ticket
         source_url=f"https://example.com/events/{event_id}",
         ticket_url=ticket_url,
         status="active",
+        venue=Venue(name=venue_name) if venue_name else None,
     )
 
 
@@ -108,6 +117,32 @@ def test_same_occurrence_with_appended_source_metadata_is_deduplicated():
         2,
         "https://example.com/2",
         datetime(2026, 8, 22, 16, 0),
+    )
+
+    result = canonicalize_db_events([first, second])
+
+    assert len(result) == 1
+    assert len(result[0].sources) == 2
+
+
+def test_same_occurrence_with_venue_name_variant_is_deduplicated():
+    first = make_event(
+        1,
+        "first-key",
+        "Jamala",
+        1,
+        "https://example.com/1",
+        datetime(2026, 9, 13, 19, 0),
+        'Тернопільський міський палац культури "Березіль" ім. Леся Курбаса',
+    )
+    second = make_event(
+        2,
+        "second-key",
+        "Jamala",
+        2,
+        "https://example.com/2",
+        datetime(2026, 9, 13, 19, 0),
+        'Палац культури "Березіль" ім. Леся Курбаса',
     )
 
     result = canonicalize_db_events([first, second])
