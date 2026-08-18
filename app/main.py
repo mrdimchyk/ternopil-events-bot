@@ -12,6 +12,7 @@ from sqlalchemy import text
 from app.bot.handlers import router
 from app.config import settings
 from app.db.session import SessionLocal, init_db
+from app.jobs.notification_worker import notification_loop
 
 
 async def run_webhook_app() -> web.Application:
@@ -35,6 +36,10 @@ async def run_webhook_app() -> web.Application:
     webhook_url = f"{base_url}{webhook_path}" if base_url else ""
 
     async def on_shutdown(_app: web.Application) -> None:
+        worker_task = _app.get("notification_worker_task")
+        if worker_task:
+            worker_task.cancel()
+            await asyncio.gather(worker_task, return_exceptions=True)
         polling_task = _app.get("polling_task")
         if polling_task:
             polling_task.cancel()
@@ -106,7 +111,12 @@ async def initialize_runtime(app: web.Application) -> None:
             polling_task = asyncio.create_task(dp.start_polling(bot, handle_signals=False))
             app["polling_task"] = polling_task
             print("Telegram polling started (no public Render URL detected)")
+
+        app["notification_worker_task"] = asyncio.create_task(
+            notification_loop(bot, asyncio.Event())
+        )
         app["runtime_ready"] = True
+        print("Notification worker started (60s interval)")
         print("Runtime initialization complete")
     except Exception as exc:
         app["runtime_error"] = repr(exc)
