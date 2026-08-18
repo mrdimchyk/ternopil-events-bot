@@ -9,23 +9,8 @@ from app.services.notifications import due_notifications, format_notification, m
 POLL_INTERVAL_SECONDS = 60
 
 
-def process_due_notifications(bot: Bot, now: datetime | None = None) -> int:
-    """Send due favorite reminders and persist delivery state after a successful send."""
-    current = now or datetime.now(timezone.utc)
-    sent = 0
-    with SessionLocal() as session:
-        due = due_notifications(session, current)
-        for subscription, item in due:
-            # The Telegram ID belongs to the user who owns this subscription.
-            telegram_id = subscription.user.telegram_id
-            # This is intentionally synchronous at the job boundary; the async
-            # worker below calls it through asyncio.to_thread only for DB work.
-            raise RuntimeError("process_due_notifications must be called via async_process_due_notifications")
-    return sent
-
-
 async def async_process_due_notifications(bot: Bot, now: datetime | None = None) -> int:
-    """Send due reminders without blocking the Telegram event loop."""
+    """Send due favorite reminders and persist delivery state after success."""
     current = now or datetime.now(timezone.utc)
     sent = 0
     with SessionLocal() as session:
