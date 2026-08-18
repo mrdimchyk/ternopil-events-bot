@@ -5,6 +5,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from app.bot.handlers import router
@@ -20,7 +21,7 @@ async def run_webhook_app() -> web.Application:
         settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = Dispatcher()
+    dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
 
     base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
@@ -37,9 +38,6 @@ async def run_webhook_app() -> web.Application:
         )
 
     async def on_shutdown(_app: web.Application) -> None:
-        # Keep the webhook registered so Telegram can wake a sleeping Free
-        # Render service with an incoming update. The next startup refreshes
-        # the webhook URL and allowed update types.
         await bot.session.close()
 
     async def health(_request: web.Request) -> web.Response:
