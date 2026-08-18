@@ -100,6 +100,30 @@ def _event_group_key(session, event_id: int) -> str | None:
     return event.group_key if event else None
 
 
+async def _refresh_event_action_buttons(callback: CallbackQuery, *, favorite: bool | None = None, notification: bool | None = None) -> None:
+    """Update only the favorite/reminder labels while preserving ticket buttons."""
+    message = callback.message
+    if not message or not message.reply_markup:
+        return
+
+    rows: list[list[InlineKeyboardButton]] = []
+    for row_index, row in enumerate(message.reply_markup.inline_keyboard):
+        new_row: list[InlineKeyboardButton] = []
+        for button in row:
+            text = button.text
+            if favorite is not None and button.callback_data and button.callback_data.startswith("favorite_id:"):
+                text = "💛 В обраному" if favorite else "❤️ Додати в обране"
+            elif notification is not None and button.callback_data and button.callback_data.startswith("notify_id:"):
+                text = "🔕 Вимкнути нагадування" if notification else "🔔 Нагадати за 24 год"
+            if text == button.text:
+                new_row.append(button)
+            else:
+                new_row.append(button.model_copy(update={"text": text}))
+        rows.append(new_row)
+
+    await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
 async def _send_events(message: Message, events: list[CanonicalDbEvent], heading: str) -> None:
     if not events:
         await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
@@ -256,12 +280,16 @@ async def toggle_favorite(callback: CallbackQuery):
             if not group_key:
                 await callback.answer("Подію вже видалено", show_alert=True)
                 return
-            if group_key in favorite_group_keys(session, callback.from_user.id):
+            is_favorite = group_key in favorite_group_keys(session, callback.from_user.id)
+            if is_favorite:
                 remove_favorite(session, callback.from_user.id, group_key)
                 text = "Видалено з обраного ❤️"
+                new_state = False
             else:
                 add_favorite(session, callback.from_user.id, group_key)
                 text = "Додано в обране 💛"
+                new_state = True
+        await _refresh_event_action_buttons(callback, favorite=new_state)
         await callback.answer(text)
     except Exception as exc:
         await callback.answer(f"Помилка БД: {type(exc).__name__}", show_alert=True)
@@ -276,12 +304,16 @@ async def toggle_notification(callback: CallbackQuery):
             if not group_key:
                 await callback.answer("Подію вже видалено", show_alert=True)
                 return
-            if group_key in notification_group_keys(session, callback.from_user.id):
+            is_subscribed = group_key in notification_group_keys(session, callback.from_user.id)
+            if is_subscribed:
                 unsubscribe_favorite(session, callback.from_user.id, group_key)
                 text = "Нагадування вимкнено 🔕"
+                new_state = False
             else:
                 subscribe_favorite(session, callback.from_user.id, group_key)
                 text = "Нагадування встановлено на 24 години до події 🔔"
+                new_state = True
+        await _refresh_event_action_buttons(callback, notification=new_state)
         await callback.answer(text)
     except Exception as exc:
         await callback.answer(f"Помилка БД: {type(exc).__name__}", show_alert=True)
@@ -301,15 +333,11 @@ async def favorites(callback: CallbackQuery):
 @router.callback_query(lambda c: c.data == "notifications")
 async def notifications(callback: CallbackQuery):
     await callback.answer()
-    try:
-        with SessionLocal() as session:
-            keys = notification_group_keys(session, callback.from_user.id)
-        await callback.message.answer(f"🔔 <b>Сповіщення</b>\n\nАктивних нагадувань: {len(keys)}\n\nНагадування надсилаються за 24 години до події.", reply_markup=main_menu())
-    except Exception as exc:
-        await callback.message.answer("⚠️ Не вдалося завантажити сповіщення.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
+    await callback.message.answer("🔔 Нагадування вмикаються кнопкою «Нагадати за 24 год» під потрібною подією.", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data == "menu")
-async def menu(callback: CallbackQuery):
+async def menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await callback.message.answer("Оберіть, що показати:", reply_markup=main_menu())
+    await state.clear()
+    await callback.message.answer("Головне меню:", reply_markup=main_menu())
