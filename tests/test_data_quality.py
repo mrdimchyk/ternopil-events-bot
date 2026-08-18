@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from app.collectors.base import RawEvent
-from app.services.data_quality import find_duplicate_candidates, validate_events
+from app.services.data_quality import enrich_missing_start_at, find_duplicate_candidates, validate_events
 
 
 def make_event(
@@ -66,3 +66,16 @@ def test_cross_source_duplicate_does_not_match_different_titles():
     second = make_event("concert-1", "Robbie Williams", start)
 
     assert find_duplicate_candidates({"KARABAS": [first], "Concert.ua": [second]}) == []
+
+
+def test_missing_start_at_is_recovered_from_title():
+    event = make_event(
+        external_id="date-in-title",
+        title="Лос Янковерс. Колумбійці 9 вересня 2026 18:00",
+    )
+    event.start_at = None
+
+    repaired = enrich_missing_start_at([event], default_year=2025)
+
+    assert repaired == 1
+    assert event.start_at == datetime(2026, 9, 9, 18, 0)
