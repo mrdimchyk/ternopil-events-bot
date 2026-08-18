@@ -5,18 +5,9 @@ from datetime import datetime
 from difflib import SequenceMatcher
 
 MONTHS_UK = {
-    "січня": 1,
-    "лютого": 2,
-    "березня": 3,
-    "квітня": 4,
-    "травня": 5,
-    "червня": 6,
-    "липня": 7,
-    "серпня": 8,
-    "вересня": 9,
-    "жовтня": 10,
-    "листопада": 11,
-    "грудня": 12,
+    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
+    "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
+    "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
 }
 MONTH_PATTERN_UK = "(?:" + "|".join(MONTHS_UK) + ")"
 EVENT_DATETIME_RE = re.compile(
@@ -55,9 +46,24 @@ def extract_datetime_from_text(text: str, *, default_year: int | None = None) ->
         return None
 
 
+def _strip_source_metadata(text: str) -> str:
+    """Remove common ticket/source suffixes appended to scraped event titles."""
+    patterns = (
+        r"\s+\bтернопіль\b.*$",
+        r"\s+\bквитки\b.*$",
+        r"\s+\bвід\s+\d+(?:[.,]\d+)?\s*(?:грн|₴|uah)?\b.*$",
+        r"\s+\b\d+(?:[.,]\d+)?\s*(?:грн|₴|uah)\b.*$",
+    )
+    cleaned = text
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
 def title_without_embedded_datetime(title: str) -> str:
-    """Remove a date/time duplicated inside a title while preserving the title text."""
+    """Remove embedded date/time and common scraped source metadata from a title."""
     cleaned = EVENT_DATETIME_RE.sub(" ", title or "")
+    cleaned = _strip_source_metadata(cleaned)
     cleaned = re.sub(r"\s{2,}", " ", cleaned)
     cleaned = re.sub(r"\s+([,|:])", r"\1", cleaned)
     cleaned = re.sub(r"([,|])\s*$", "", cleaned)
