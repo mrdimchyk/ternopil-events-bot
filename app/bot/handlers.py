@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from app.config import settings
 from app.db.session import SessionLocal
+from app.db.models import Event
 from app.services.event_queries import (
     CanonicalDbEvent,
     canonical_events_for_category,
@@ -69,8 +70,10 @@ def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str], no
         event = item.representative
         favorite_label = "💛 В обраному" if event.group_key in favorite_keys else "❤️ Додати в обране"
         notification_label = "🔕 Вимкнути нагадування" if event.group_key in notification_keys else "🔔 Нагадати за 24 год"
-        rows.append([InlineKeyboardButton(text=favorite_label, callback_data=f"favorite:{event.group_key}")])
-        rows.append([InlineKeyboardButton(text=notification_label, callback_data=f"notify:{event.group_key}")])
+        # Telegram callback_data is limited to 64 bytes. group_key is allowed to
+        # use the full 64 chars in the DB, so never put it directly in callback_data.
+        rows.append([InlineKeyboardButton(text=favorite_label, callback_data=f"favorite_id:{event.id}")])
+        rows.append([InlineKeyboardButton(text=notification_label, callback_data=f"notify_id:{event.id}")])
         offers = [s for s in item.sources if s.ticket_url]
         for index, source in enumerate(offers, start=1):
             label = f"🎟️ {event.title[:38]}" if len(offers) == 1 else f"🎟️ {event.title[:32]} — квитки {index}"
@@ -79,12 +82,15 @@ def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str], no
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _event_group_key(session, event_id: int) -> str | None:
+    event = session.get(Event, event_id)
+    return event.group_key if event else None
+
+
 async def _send_events(message: Message, events: list[CanonicalDbEvent], heading: str) -> None:
     if not events:
         await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
-    # Favorites/notifications are optional presentation data. They must never
-    # prevent the actual event list from being shown when their tables fail.
     favorite_keys: set[str] = set()
     notification_keys: set[str] = set()
     try:
@@ -242,11 +248,15 @@ async def category_events(callback: CallbackQuery):
         )
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("favorite:"))
+@router.callback_query(lambda c: c.data and c.data.startswith("favorite_id:"))
 async def toggle_favorite(callback: CallbackQuery):
-    group_key = callback.data.split(":", 1)[1]
     try:
+        event_id = int(callback.data.split(":", 1)[1])
         with SessionLocal() as session:
+            group_key = _event_group_key(session, event_id)
+            if not group_key:
+                await callback.answer("Подію вже видалено", show_alert=True)
+                return
             if group_key in favorite_group_keys(session, callback.from_user.id):
                 remove_favorite(session, callback.from_user.id, group_key)
                 text = "Видалено з обраного ❤️"
@@ -258,11 +268,15 @@ async def toggle_favorite(callback: CallbackQuery):
         await callback.answer(f"Помилка БД: {type(exc).__name__}", show_alert=True)
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("notify:"))
+@router.callback_query(lambda c: c.data and c.data.startswith("notify_id:"))
 async def toggle_notification(callback: CallbackQuery):
-    group_key = callback.data.split(":", 1)[1]
     try:
+        event_id = int(callback.data.split(":", 1)[1])
         with SessionLocal() as session:
+            group_key = _event_group_key(session, event_id)
+            if not group_key:
+                await callback.answer("Подію вже видалено", show_alert=True)
+                return
             if group_key in notification_group_keys(session, callback.from_user.id):
                 unsubscribe_favorite(session, callback.from_user.id, group_key)
                 text = "Нагадування вимкнено 🔕"
