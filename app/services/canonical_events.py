@@ -3,7 +3,13 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from app.collectors.base import RawEvent
-from app.services.event_identity import make_group_key, normalize_title, title_variant_match, title_without_embedded_datetime
+from app.services.event_identity import (
+    make_group_key,
+    normalize_title,
+    title_variant_match,
+    title_without_embedded_datetime,
+    venue_variant_match,
+)
 
 
 @dataclass(slots=True)
@@ -46,9 +52,8 @@ def _same_event(a: RawEvent, b: RawEvent, time_tolerance_minutes: int = 15) -> b
 
     venue_a = normalize_title(a.venue or "")
     venue_b = normalize_title(b.venue or "")
-    if venue_a and venue_b and venue_a != venue_b:
-        if SequenceMatcher(None, venue_a, venue_b).ratio() < 0.80:
-            return False
+    if venue_a and venue_b and not venue_variant_match(venue_a, venue_b):
+        return False
 
     return True
 
