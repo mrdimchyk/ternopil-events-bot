@@ -65,7 +65,10 @@ def title_without_embedded_datetime(title: str) -> str:
     cleaned = EVENT_DATETIME_RE.sub(" ", title or "")
     cleaned = _strip_source_metadata(cleaned)
     cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    cleaned = re.sub(r"\s+([,|:])", r"\1", cleaned)
+    # Keep the conventional separator spacing in titles such as "Artist | Event".
+    # Pipe is semantic title content, not punctuation whose leading whitespace
+    # should be stripped.
+    cleaned = re.sub(r"\s+([,:])", r"\1", cleaned)
     cleaned = re.sub(r"([,|])\s*$", "", cleaned)
     return cleaned.strip(" -—|,:") or (title or "")
 
