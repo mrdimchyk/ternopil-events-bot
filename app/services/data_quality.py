@@ -5,7 +5,7 @@ from difflib import SequenceMatcher
 from urllib.parse import urlparse
 
 from app.collectors.base import RawEvent
-from app.services.event_identity import normalize_title
+from app.services.event_identity import extract_datetime_from_text, normalize_title
 
 
 @dataclass(slots=True)
@@ -31,6 +31,20 @@ def _naive(value: datetime | None) -> datetime | None:
     if value.tzinfo is not None:
         return value.astimezone(timezone.utc).replace(tzinfo=None)
     return value
+
+
+def enrich_missing_start_at(events: list[RawEvent], *, default_year: int | None = None) -> int:
+    """Recover a missing event date/time from the title before quality validation."""
+    repaired = 0
+    for event in events:
+        if event.start_at is not None:
+            continue
+        extracted = extract_datetime_from_text(event.title, default_year=default_year)
+        if extracted is None:
+            continue
+        event.start_at = extracted
+        repaired += 1
+    return repaired
 
 
 def validate_events(
