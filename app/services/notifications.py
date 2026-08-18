@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.config import settings
 from app.db.models import Event, EventChange
 from app.db.user_models import FavoriteNotification, TelegramUser
+from app.services.user_event_state import related_group_keys
 
 DEFAULT_NOTIFY_BEFORE_MINUTES = 24 * 60
 
@@ -52,10 +53,17 @@ def unsubscribe_favorite(session: Session, telegram_id: int, group_key: str) -> 
     user = session.scalar(select(TelegramUser).where(TelegramUser.telegram_id == telegram_id))
     if user is None:
         return False
-    subscription = session.scalar(select(FavoriteNotification).where(FavoriteNotification.user_id == user.id, FavoriteNotification.group_key == group_key))
-    if subscription is None:
+    keys = related_group_keys(session, group_key)
+    subscriptions = session.scalars(
+        select(FavoriteNotification).where(
+            FavoriteNotification.user_id == user.id,
+            FavoriteNotification.group_key.in_(keys),
+        )
+    ).all()
+    if not subscriptions:
         return False
-    session.delete(subscription)
+    for subscription in subscriptions:
+        session.delete(subscription)
     session.commit()
     return True
 
@@ -64,7 +72,16 @@ def notification_group_keys(session: Session, telegram_id: int) -> set[str]:
     user = session.scalar(select(TelegramUser).where(TelegramUser.telegram_id == telegram_id))
     if user is None:
         return set()
-    return set(session.scalars(select(FavoriteNotification.group_key).where(FavoriteNotification.user_id == user.id, FavoriteNotification.enabled.is_(True))).all())
+    rows = session.scalars(
+        select(FavoriteNotification.group_key).where(
+            FavoriteNotification.user_id == user.id,
+            FavoriteNotification.enabled.is_(True),
+        )
+    ).all()
+    expanded: set[str] = set()
+    for key in rows:
+        expanded.update(related_group_keys(session, key))
+    return expanded
 
 
 def tomorrow_events(session: Session, now: datetime | None = None) -> list[Event]:

@@ -80,9 +80,10 @@ def _format_event(item: CanonicalDbEvent) -> str:
 
 def _event_keyboard(item: CanonicalDbEvent, favorite_keys: set[str], notification_keys: set[str]) -> InlineKeyboardMarkup:
     event = item.representative
+    source_keys = {source.group_key for source in item.sources}
     rows = []
-    favorite_label = "💛 В обраному" if event.group_key in favorite_keys else "❤️ Додати в обране"
-    notification_label = "🔕 Вимкнути нагадування" if event.group_key in notification_keys else "🔔 Нагадати за 24 год"
+    favorite_label = "💛 В обраному" if source_keys & favorite_keys else "❤️ Додати в обране"
+    notification_label = "🔕 Вимкнути нагадування" if source_keys & notification_keys else "🔔 Нагадати за 24 год"
     favorite_data = f"favorite_id:{event.id}"
     notification_data = f"notify_id:{event.id}"
     if len(favorite_data.encode("utf-8")) <= 64:
@@ -338,13 +339,16 @@ async def notifications(callback: CallbackQuery):
                     select(Event)
                     .options(selectinload(Event.venue))
                     .where(
-                        Event.group_key.in_(keys),
                         Event.start_at >= _local_now(),
                         Event.status == "active",
                     )
                     .order_by(Event.start_at.asc(), Event.title.asc())
                 ).all()
-                events = canonicalize_db_events(list(rows))
+                events = [
+                    item
+                    for item in canonicalize_db_events(list(rows))
+                    if any(source.group_key in keys for source in item.sources)
+                ]
         await _send_events(callback.message, events, "Мої сповіщення", user_id=callback.from_user.id)
     except Exception as exc:
         await callback.message.answer("⚠️ Не вдалося завантажити сповіщення.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
