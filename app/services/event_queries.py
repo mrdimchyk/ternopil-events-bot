@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -13,8 +13,14 @@ class CanonicalDbEvent:
     sources: list[Event]
 
 
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def events_for_day(session: Session, day: datetime) -> list[Event]:
-    start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = _utc(day.replace(hour=0, minute=0, second=0, microsecond=0))
     end = start + timedelta(days=1)
     return list(
         session.scalars(
@@ -55,6 +61,8 @@ def canonical_events_for_day(session: Session, day: datetime) -> list[CanonicalD
 
 
 def canonical_events_for_range(session: Session, start: datetime, end: datetime) -> list[CanonicalDbEvent]:
+    start = _utc(start)
+    end = _utc(end)
     events = list(
         session.scalars(
             select(Event)
@@ -67,6 +75,8 @@ def canonical_events_for_range(session: Session, start: datetime, end: datetime)
 
 
 def category_counts(session: Session, start: datetime, end: datetime) -> list[tuple[str, int]]:
+    start = _utc(start)
+    end = _utc(end)
     rows = session.execute(
         select(func.coalesce(Event.category, "Інше"), func.count(func.distinct(Event.group_key)))
         .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
@@ -79,6 +89,8 @@ def category_counts(session: Session, start: datetime, end: datetime) -> list[tu
 def canonical_events_for_category(
     session: Session, category: str, start: datetime, end: datetime
 ) -> list[CanonicalDbEvent]:
+    start = _utc(start)
+    end = _utc(end)
     events = list(
         session.scalars(
             select(Event)
