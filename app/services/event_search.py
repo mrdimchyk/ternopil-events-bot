@@ -1,10 +1,16 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
 from app.services.event_queries import CanonicalDbEvent, canonicalize_db_events
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def search_canonical_events(
@@ -19,7 +25,7 @@ def search_canonical_events(
         func.lower(Event.title).contains(term),
     ]
     if start is not None:
-        filters.append(Event.start_at.is_(None) | (Event.start_at >= start))
+        filters.append(Event.start_at.is_(None) | (Event.start_at >= _utc(start)))
 
     events = list(
         session.scalars(
