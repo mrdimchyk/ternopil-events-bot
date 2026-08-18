@@ -37,10 +37,8 @@ def _day_range(offset: int) -> tuple[datetime, datetime]:
 def _display_start(start_at: datetime | None) -> str:
     if start_at is None:
         return "Час уточнюється"
-    if start_at.tzinfo is None:
-        local = start_at
-    else:
-        local = start_at.astimezone(ZoneInfo(settings.timezone))
+    tzinfo = getattr(start_at, "tzinfo", None)
+    local = start_at if tzinfo is None else start_at.astimezone(ZoneInfo(settings.timezone))
     return local.strftime("%H:%M")
 
 
