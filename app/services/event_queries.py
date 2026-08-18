@@ -7,7 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
-from app.services.event_identity import normalize_title, title_variant_match, title_without_embedded_datetime
+from app.services.event_identity import (
+    normalize_title,
+    title_variant_match,
+    title_without_embedded_datetime,
+)
 
 
 @dataclass(slots=True)
@@ -48,14 +52,13 @@ def _same_occurrence(a: Event, b: Event, time_tolerance_minutes: int = 15) -> bo
 def events_for_day(session: Session, day: datetime) -> list[Event]:
     start = _utc(day.replace(hour=0, minute=0, second=0, microsecond=0))
     end = start + timedelta(days=1)
-    return list(
-        session.scalars(
-            select(Event)
-            .options(selectinload(Event.venue))
-            .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
-            .order_by(Event.start_at, Event.title)
-        ).all()
+    query = (
+        select(Event)
+        .options(selectinload(Event.venue))
+        .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
+        .order_by(Event.start_at, Event.title)
     )
+    return list(session.scalars(query).all())
 
 
 def canonicalize_db_events(events: list[Event]) -> list[CanonicalDbEvent]:
@@ -100,20 +103,25 @@ def canonicalize_db_events(events: list[Event]) -> list[CanonicalDbEvent]:
 
 
 def canonical_events_for_day(session: Session, day: datetime) -> list[CanonicalDbEvent]:
-    return canonicalize_db_events(events_for_day(session, day))
+    events = events_for_day(session, day)
+    canonical = canonicalize_db_events(events)
+    return canonical
 
 
-def canonical_events_for_range(session: Session, start: datetime, end: datetime) -> list[CanonicalDbEvent]:
+def canonical_events_for_range(
+    session: Session, start: datetime, end: datetime
+) -> list[CanonicalDbEvent]:
     start = _utc(start)
     end = _utc(end)
-    events = list(
-        session.scalars(
-            select(Event)
-            .options(selectinload(Event.venue))
-            .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
-            .order_by(Event.start_at, Event.title)
-        ).all()
-    return canonicalize_db_events(events)
+    query = (
+        select(Event)
+        .options(selectinload(Event.venue))
+        .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
+        .order_by(Event.start_at, Event.title)
+    )
+    events = list(session.scalars(query).all())
+    canonical = canonicalize_db_events(events)
+    return canonical
 
 
 def category_counts(session: Session, start: datetime, end: datetime) -> list[tuple[str, int]]:
@@ -128,17 +136,17 @@ def canonical_events_for_category(
 ) -> list[CanonicalDbEvent]:
     start = _utc(start)
     end = _utc(end)
-    events = list(
-        session.scalars(
-            select(Event)
-            .options(selectinload(Event.venue))
-            .where(
-                Event.start_at >= start,
-                Event.start_at < end,
-                Event.status == "active",
-            )
-            .order_by(Event.start_at, Event.title)
-        ).all()
+    query = (
+        select(Event)
+        .options(selectinload(Event.venue))
+        .where(
+            Event.start_at >= start,
+            Event.start_at < end,
+            Event.status == "active",
+        )
+        .order_by(Event.start_at, Event.title)
+    )
+    events = list(session.scalars(query).all())
     canonical = canonicalize_db_events(events)
     return [
         item
