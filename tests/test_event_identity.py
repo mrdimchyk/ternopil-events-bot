@@ -3,6 +3,7 @@ from datetime import datetime
 from app.services.event_identity import (
     extract_datetime_from_text,
     make_group_key,
+    title_variant_match,
     title_without_embedded_datetime,
 )
 
@@ -27,3 +28,13 @@ def test_extract_date_without_time_uses_midnight():
 def test_title_without_embedded_datetime():
     title = "ТІК. Найкраще 22 серпня 2026 16:00"
     assert title_without_embedded_datetime(title) == "ТІК. Найкраще"
+
+
+def test_title_variant_with_ticket_metadata_is_same_event():
+    base = "Chico & Qatoshi x TIK | День Незалежності"
+    scraped = (
+        "Chico & Qatoshi x TIK | День Незалежності 22 серпня 2026 16:00 "
+        "Тернопіль Агроленд від 600₴ Квитки"
+    )
+    assert title_variant_match(base, scraped)
+    assert title_without_embedded_datetime(scraped) == base
