@@ -17,6 +17,7 @@ from app.services.event_queries import (
     canonical_events_for_day,
     category_counts,
 )
+from app.services.event_identity import title_without_embedded_datetime
 from app.services.event_search import search_canonical_events
 from app.services.favorites import add_favorite, favorite_events, favorite_group_keys, remove_favorite
 from app.services.notifications import notification_group_keys, subscribe_favorite, unsubscribe_favorite
@@ -47,6 +48,14 @@ def _day_range(offset: int) -> tuple[datetime, datetime]:
     return target, target + timedelta(days=1)
 
 
+def _display_date(start_at: datetime | None) -> str:
+    if start_at is None:
+        return "Дата уточнюється"
+    tzinfo = getattr(start_at, "tzinfo", None)
+    local = start_at if tzinfo is None else start_at.astimezone(ZoneInfo(settings.timezone))
+    return local.strftime("%d.%m.%Y")
+
+
 def _display_start(start_at: datetime | None) -> str:
     if start_at is None:
         return "Час уточнюється"
@@ -57,11 +66,13 @@ def _display_start(start_at: datetime | None) -> str:
 
 def _format_event(item: CanonicalDbEvent) -> str:
     event = item.representative
+    title = title_without_embedded_datetime(event.title)
+    date = _display_date(event.start_at)
     time = _display_start(event.start_at)
     venue = f"📍 {event.venue.name}" if event.venue else "📍 Тернопіль"
     prices = sorted({source.price_text for source in item.sources if source.price_text})
     price = f"💰 {', '.join(prices)}\n" if prices else ""
-    return f"🎟️ <b>{event.title}</b>\n🕐 {time}\n{venue}\n{price}"
+    return f"🎟️ <b>{title}</b>\n📅 {date}\n🕐 {time}\n{venue}\n{price}"
 
 
 def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str], notification_keys: set[str]) -> InlineKeyboardMarkup:
@@ -70,13 +81,16 @@ def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str], no
         event = item.representative
         favorite_label = "💛 В обраному" if event.group_key in favorite_keys else "❤️ Додати в обране"
         notification_label = "🔕 Вимкнути нагадування" if event.group_key in notification_keys else "🔔 Нагадати за 24 год"
-        # Telegram callback_data is limited to 64 bytes. group_key is allowed to
-        # use the full 64 chars in the DB, so never put it directly in callback_data.
-        rows.append([InlineKeyboardButton(text=favorite_label, callback_data=f"favorite_id:{event.id}")])
-        rows.append([InlineKeyboardButton(text=notification_label, callback_data=f"notify_id:{event.id}")])
+        favorite_data = f"favorite_id:{event.id}"
+        notification_data = f"notify_id:{event.id}"
+        # Keep callback payloads tiny and deterministic; Telegram allows max 64 bytes.
+        if len(favorite_data.encode("utf-8")) <= 64:
+            rows.append([InlineKeyboardButton(text=favorite_label, callback_data=favorite_data)])
+        if len(notification_data.encode("utf-8")) <= 64:
+            rows.append([InlineKeyboardButton(text=notification_label, callback_data=notification_data)])
         offers = [s for s in item.sources if s.ticket_url]
         for index, source in enumerate(offers, start=1):
-            label = f"🎟️ {event.title[:38]}" if len(offers) == 1 else f"🎟️ {event.title[:32]} — квитки {index}"
+            label = f"🎟️ {title_without_embedded_datetime(event.title)[:38]}" if len(offers) == 1 else f"🎟️ {title_without_embedded_datetime(event.title)[:32]} — квитки {index}"
             rows.append([InlineKeyboardButton(text=label, url=source.ticket_url)])
     rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -205,10 +219,10 @@ async def categories(callback: CallbackQuery):
         end = start + timedelta(days=30)
         with SessionLocal() as session:
             counts = category_counts(session, start, end)
-        rows = [[InlineKeyboardButton(text=f"🎭 {name} ({count})", callback_data=f"category:{index}")] for index, (name, count) in enumerate(counts[:12])]
-        if counts:
-            _category_cache.clear()
-            _category_cache.update({index: name for index, (name, _) in enumerate(counts[:12])})
+        rows = [
+            [InlineKeyboardButton(text=f"🎭 {name} ({count})", callback_data=f"category:{index}")]
+            for index, (name, count) in enumerate(counts[:12])
+        ]
         rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
         await callback.message.answer("Оберіть категорію на найближчі 30 днів:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     except Exception as exc:
@@ -219,9 +233,6 @@ async def categories(callback: CallbackQuery):
         )
 
 
-_category_cache: dict[int, str] = {}
-
-
 @router.callback_query(lambda c: c.data and c.data.startswith("category:"))
 async def category_events(callback: CallbackQuery):
     await callback.answer()
@@ -230,14 +241,15 @@ async def category_events(callback: CallbackQuery):
     except ValueError:
         await callback.message.answer("Не вдалося визначити категорію.", reply_markup=main_menu())
         return
-    category = _category_cache.get(index)
-    if not category:
-        await callback.message.answer("Категорії оновилися. Відкрийте їх ще раз.", reply_markup=main_menu())
-        return
     try:
         start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=30)
         with SessionLocal() as session:
+            counts = category_counts(session, start, end)
+            if index < 0 or index >= min(len(counts), 12):
+                await callback.message.answer("Категорія більше недоступна. Відкрийте категорії ще раз.", reply_markup=main_menu())
+                return
+            category = counts[index][0]
             events = canonical_events_for_category(session, category, start, end)
         await _send_events(callback.message, events, f"{category} — найближчі 30 днів")
     except Exception as exc:
