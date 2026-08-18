@@ -66,7 +66,8 @@ def test_favorite_events_keep_canonical_sources_together():
     session.add_all([
         make_event(1, "a1", "group-a", now + timedelta(days=1)),
         make_event(2, "b1", "group-a", now + timedelta(days=1)),
-        make_event(1, "a2", "group-b", now + timedelta(days=1)),
+        # Different occurrence: keep it outside the canonical time tolerance.
+        make_event(1, "a2", "group-b", now + timedelta(days=1, hours=1)),
     ])
     session.commit()
     add_favorite(session, 42, "group-a")
