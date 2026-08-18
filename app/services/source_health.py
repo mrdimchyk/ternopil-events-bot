@@ -66,7 +66,10 @@ def _status_for_runs(
         status = "degraded"
         message = "Latest run returned zero events; inspect the collector/parser."
     elif freshness_stale:
-        status = "stale"
+        # A source can be perfectly operational while simply having no events
+        # in the next week. Keep this visible as informational/quiet rather
+        # than treating it as a collector failure.
+        status = "quiet"
         if next_event_at is not None:
             message = (
                 f"No active events in the next {FRESHNESS_WINDOW_DAYS} days; "
@@ -174,7 +177,7 @@ def source_health_report(
         }
 
     statuses = [item["status"] for item in results.values()]
-    if any(status in {"down", "degraded", "stale"} for status in statuses):
+    if any(status in {"down", "degraded"} for status in statuses):
         overall = "degraded"
     elif any(status == "unknown" for status in statuses):
         overall = "warming"
