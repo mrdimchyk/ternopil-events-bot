@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
 
 from app.collectors.base import RawEvent
 from app.services.event_identity import (
