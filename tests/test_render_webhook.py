@@ -9,7 +9,10 @@ def test_main_uses_render_webhook_runtime():
 
     assert "SimpleRequestHandler" in text
     assert "RENDER_EXTERNAL_URL" in text
-    assert "web.run_app" in text
+    assert "web.AppRunner" in text
+    assert "web.TCPSite" in text
+    assert "await site.start()" in text
+    assert "initialize_runtime" in text
     assert any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
