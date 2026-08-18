@@ -42,10 +42,16 @@ def extract_datetime_from_text(text: str, *, default_year: int | None = None) ->
         return None
     values = match.groupdict()
     try:
+        explicit_year = values["year"] is not None
         year = int(values["year"] or default_year or datetime.now().year)
         hour = int(values["hour"] or 0)
         minute = int(values["minute"] or 0)
-        return datetime(year, MONTHS_UK[values["month"].lower()], int(values["day"]), hour, minute)
+        value = datetime(year, MONTHS_UK[values["month"].lower()], int(values["day"]), hour, minute)
+        # When a source omits the year, interpret a date that already passed
+        # as the next occurrence rather than creating an immediately stale event.
+        if not explicit_year and value < datetime.now():
+            value = value.replace(year=value.year + 1)
+        return value
     except (KeyError, TypeError, ValueError):
         return None
 
