@@ -1,18 +1,23 @@
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from app.bot.handlers import _format_event
 
 
-def test_format_event_contains_core_fields():
+def test_format_event_contains_separate_date_and_time_and_cleans_embedded_date():
     event = SimpleNamespace(
-        title="Тестова подія",
-        start_at=SimpleNamespace(strftime=lambda fmt: "19:00"),
+        title="Лос Янковерс. Колумбійці, які співають українські пісні 9 вересня 2026 18:00",
+        start_at=datetime(2026, 9, 9, 15, 0, tzinfo=ZoneInfo("UTC")),
         venue=SimpleNamespace(name="Тернопільський театр"),
         price_text="300 грн",
     )
     item = SimpleNamespace(representative=event, sources=[event])
     text = _format_event(item)
-    assert "Тестова подія" in text
-    assert "19:00" in text
+
+    assert "Лос Янковерс. Колумбійці, які співають українські пісні" in text
+    assert "9 вересня 2026 18:00" not in text
+    assert "📅 09.09.2026" in text
+    assert "🕐 18:00" in text
     assert "Тернопільський театр" in text
     assert "300 грн" in text
