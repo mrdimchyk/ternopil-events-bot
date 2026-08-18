@@ -11,7 +11,7 @@ MONTHS_UK = {
 }
 MONTH_PATTERN_UK = "(?:" + "|".join(MONTHS_UK) + ")"
 EVENT_DATETIME_RE = re.compile(
-    rf"(?P<day>\d{{1,2}}\s+(?P<month>{MONTH_PATTERN_UK}))"
+    rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN_UK})"
     rf"(?:\s+(?P<year>20\d{{2}}))?"
     rf"(?:\s*(?:,|\||—|-)?\s*(?P<hour>\d{{1,2}}):(?P<minute>\d{{2}}))?",
     re.IGNORECASE,
