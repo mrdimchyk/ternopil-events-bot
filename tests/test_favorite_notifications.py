@@ -27,7 +27,7 @@ def test_subscription_is_idempotent_and_user_scoped():
     assert db.query(FavoriteNotification).count() == 2
 
 
-def test_notification_state_expands_across_canonical_source_variants():
+def test_notification_state_keeps_raw_subscription_key_for_canonical_display():
     db = session()
     start = datetime(2026, 8, 23, 19, 0)
     db.add_all(
@@ -40,7 +40,7 @@ def test_notification_state_expands_across_canonical_source_variants():
 
     subscribe_favorite(db, 10000000001, "g2")
 
-    assert notification_group_keys(db, 10000000001) == {"g1", "g2"}
+    assert notification_group_keys(db, 10000000001) == {"g2"}
     assert unsubscribe_favorite(db, 10000000001, "g1") is True
     assert notification_group_keys(db, 10000000001) == set()
 
