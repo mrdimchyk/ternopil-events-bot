@@ -21,6 +21,11 @@ jobs:
         run: pip install -e .
       - name: Validate collector registry
         run: python -c "from app.collectors.registry import validate_collectors; validate_collectors()"
+      - name: Repair stored events missing dates
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONUNBUFFERED: "1"
+        run: python scripts/repair_event_dates.py
       - name: Capture KARABAS production responses
         continue-on-error: true
         run: python scripts/diagnose_karabas.py
