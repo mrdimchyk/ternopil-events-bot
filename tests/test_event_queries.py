@@ -149,3 +149,15 @@ def test_same_occurrence_with_venue_name_variant_is_deduplicated():
 
     assert len(result) == 1
     assert len(result[0].sources) == 2
+
+
+def test_canonicalization_is_stable_for_three_transitive_source_variants():
+    start = datetime(2026, 9, 13, 19, 0)
+    first = make_event(1, "source-a", "Jamala", 1, "https://example.com/a", start, "Палац культури Березіль")
+    second = make_event(2, "source-b", "Jamala — квитки", 2, "https://example.com/b", start, "Палац культури Березіль")
+    third = make_event(3, "source-c", "Jamala", 3, "https://example.com/c", start, "Тернопільський міський палац культури Березіль")
+
+    result = canonicalize_db_events([first, second, third])
+
+    assert len(result) == 1
+    assert {source.group_key for source in result[0].sources} == {"source-a", "source-b", "source-c"}
