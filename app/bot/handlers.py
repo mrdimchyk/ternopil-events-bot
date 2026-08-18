@@ -9,7 +9,13 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from app.config import settings
 from app.db.session import SessionLocal
-from app.services.event_queries import CanonicalDbEvent, canonical_events_for_category, canonical_events_for_range, canonical_events_for_day, category_counts
+from app.services.event_queries import (
+    CanonicalDbEvent,
+    canonical_events_for_category,
+    canonical_events_for_range,
+    canonical_events_for_day,
+    category_counts,
+)
 from app.services.event_search import search_canonical_events
 from app.services.favorites import add_favorite, favorite_events, favorite_group_keys, remove_favorite
 from app.services.notifications import notification_group_keys, subscribe_favorite, unsubscribe_favorite
@@ -77,9 +83,16 @@ async def _send_events(message: Message, events: list[CanonicalDbEvent], heading
     if not events:
         await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
-    with SessionLocal() as session:
-        favorite_keys = favorite_group_keys(session, message.from_user.id)
-        notification_keys = notification_group_keys(session, message.from_user.id)
+    # Favorites/notifications are optional presentation data. They must never
+    # prevent the actual event list from being shown when their tables fail.
+    favorite_keys: set[str] = set()
+    notification_keys: set[str] = set()
+    try:
+        with SessionLocal() as session:
+            favorite_keys = favorite_group_keys(session, message.from_user.id)
+            notification_keys = notification_group_keys(session, message.from_user.id)
+    except Exception:
+        pass
     text = f"📅 <b>{heading}</b>\n\n" + "\n\n".join(_format_event(item) for item in events[:20])
     if len(events) > 20:
         text += f"\n\n…і ще {len(events) - 20} подій."
@@ -111,8 +124,12 @@ async def _run_search(message: Message, query: str) -> None:
         with SessionLocal() as session:
             events = search_canonical_events(session, query, start=start)
         await _send_events(message, events, f"Результати пошуку: «{query}»")
-    except Exception:
-        await message.answer("⚠️ Під час пошуку сталася помилка. Спробуйте ще раз.", reply_markup=main_menu())
+    except Exception as exc:
+        await message.answer(
+            "⚠️ Під час пошуку сталася помилка.\n"
+            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
+            reply_markup=main_menu(),
+        )
 
 
 @router.message(CommandStart())
@@ -150,32 +167,50 @@ async def day_events(callback: CallbackQuery):
     await callback.answer()
     try:
         await _send_day(callback.message, 0 if callback.data == "events:today" else 1)
-    except Exception:
-        await callback.message.answer("⚠️ Не вдалося завантажити події. Спробуйте ще раз.", reply_markup=main_menu())
+    except Exception as exc:
+        await callback.message.answer(
+            "⚠️ Не вдалося завантажити події.\n"
+            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
+            reply_markup=main_menu(),
+        )
 
 
 @router.callback_query(lambda c: c.data == "events:weekend")
 async def weekend_events(callback: CallbackQuery):
     await callback.answer()
-    start, end = _weekend_range()
-    with SessionLocal() as session:
-        events = canonical_events_for_range(session, start, end)
-    await _send_events(callback.message, events, "Події цими вихідними у Тернополі")
+    try:
+        start, end = _weekend_range()
+        with SessionLocal() as session:
+            events = canonical_events_for_range(session, start, end)
+        await _send_events(callback.message, events, "Події цими вихідними у Тернополі")
+    except Exception as exc:
+        await callback.message.answer(
+            "⚠️ Не вдалося завантажити вихідні.\n"
+            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
+            reply_markup=main_menu(),
+        )
 
 
 @router.callback_query(lambda c: c.data == "categories")
 async def categories(callback: CallbackQuery):
     await callback.answer()
-    start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + timedelta(days=30)
-    with SessionLocal() as session:
-        counts = category_counts(session, start, end)
-    rows = [[InlineKeyboardButton(text=f"🎭 {name} ({count})", callback_data=f"category:{index}")] for index, (name, count) in enumerate(counts[:12])]
-    if counts:
-        _category_cache.clear()
-        _category_cache.update({index: name for index, (name, _) in enumerate(counts[:12])})
-    rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
-    await callback.message.answer("Оберіть категорію на найближчі 30 днів:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    try:
+        start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=30)
+        with SessionLocal() as session:
+            counts = category_counts(session, start, end)
+        rows = [[InlineKeyboardButton(text=f"🎭 {name} ({count})", callback_data=f"category:{index}")] for index, (name, count) in enumerate(counts[:12])]
+        if counts:
+            _category_cache.clear()
+            _category_cache.update({index: name for index, (name, _) in enumerate(counts[:12])})
+        rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
+        await callback.message.answer("Оберіть категорію на найближчі 30 днів:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    except Exception as exc:
+        await callback.message.answer(
+            "⚠️ Не вдалося завантажити категорії.\n"
+            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
+            reply_markup=main_menu(),
+        )
 
 
 _category_cache: dict[int, str] = {}
@@ -193,53 +228,80 @@ async def category_events(callback: CallbackQuery):
     if not category:
         await callback.message.answer("Категорії оновилися. Відкрийте їх ще раз.", reply_markup=main_menu())
         return
-    start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + timedelta(days=30)
-    with SessionLocal() as session:
-        events = canonical_events_for_category(session, category, start, end)
-    await _send_events(callback.message, events, f"{category} — найближчі 30 днів")
+    try:
+        start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=30)
+        with SessionLocal() as session:
+            events = canonical_events_for_category(session, category, start, end)
+        await _send_events(callback.message, events, f"{category} — найближчі 30 днів")
+    except Exception as exc:
+        await callback.message.answer(
+            "⚠️ Не вдалося завантажити події категорії.\n"
+            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
+            reply_markup=main_menu(),
+        )
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("favorite:"))
 async def toggle_favorite(callback: CallbackQuery):
     group_key = callback.data.split(":", 1)[1]
-    with SessionLocal() as session:
-        if group_key in favorite_group_keys(session, callback.from_user.id):
-            remove_favorite(session, callback.from_user.id, group_key)
-            text = "Видалено з обраного ❤️"
-        else:
-            add_favorite(session, callback.from_user.id, group_key)
-            text = "Додано в обране 💛"
-    await callback.answer(text)
+    try:
+        with SessionLocal() as session:
+            if group_key in favorite_group_keys(session, callback.from_user.id):
+                remove_favorite(session, callback.from_user.id, group_key)
+                text = "Видалено з обраного ❤️"
+            else:
+                add_favorite(session, callback.from_user.id, group_key)
+                text = "Додано в обране 💛"
+        await callback.answer(text)
+    except Exception as exc:
+        await callback.answer(f"Помилка БД: {type(exc).__name__}", show_alert=True)
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("notify:"))
 async def toggle_notification(callback: CallbackQuery):
     group_key = callback.data.split(":", 1)[1]
-    with SessionLocal() as session:
-        if group_key in notification_group_keys(session, callback.from_user.id):
-            unsubscribe_favorite(session, callback.from_user.id, group_key)
-            text = "Нагадування вимкнено 🔕"
-        else:
-            subscribe_favorite(session, callback.from_user.id, group_key)
-            text = "Нагадування встановлено на 24 години до події 🔔"
-    await callback.answer(text)
+    try:
+        with SessionLocal() as session:
+            if group_key in notification_group_keys(session, callback.from_user.id):
+                unsubscribe_favorite(session, callback.from_user.id, group_key)
+                text = "Нагадування вимкнено 🔕"
+            else:
+                subscribe_favorite(session, callback.from_user.id, group_key)
+                text = "Нагадування встановлено на 24 години до події 🔔"
+        await callback.answer(text)
+    except Exception as exc:
+        await callback.answer(f"Помилка БД: {type(exc).__name__}", show_alert=True)
 
 
 @router.callback_query(lambda c: c.data == "favorites")
 async def favorites(callback: CallbackQuery):
     await callback.answer()
-    with SessionLocal() as session:
-        events = favorite_events(session, callback.from_user.id, _local_now())
-    await _send_events(callback.message, events, "Моє обране")
+    try:
+        with SessionLocal() as session:
+            events = favorite_events(session, callback.from_user.id, _local_now())
+        await _send_events(callback.message, events, "Моє обране")
+    except Exception as exc:
+        await callback.message.answer(
+            "⚠️ Не вдалося завантажити обране.\n"
+            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
+            reply_markup=main_menu(),
+        )
 
 
 @router.callback_query(lambda c: c.data == "notifications")
 async def notifications(callback: CallbackQuery):
     await callback.answer()
-    with SessionLocal() as session:
-        keys = notification_group_keys(session, callback.from_user.id)
-    await callback.message.answer(f"🔔 <b>Сповіщення</b>\n\nАктивних нагадувань: {len(keys)}\n\nНагадування надсилаються за 24 години до події.", reply_markup=main_menu())
+    try:
+        with SessionLocal() as session:
+            keys = notification_group_keys(session, callback.from_user.id)
+        await callback.message.answer(f"🔔 <b>Сповіщення</b>\n\nАктивних нагадувань: {len(keys)}\n\nНагадування надсилаються за 24 години до події.", reply_markup=main_menu())
+    except Exception as exc:
+        await callback.message.answer(
+            "⚠️ Не вдалося завантажити сповіщення.\n"
+            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
+            reply_markup=main_menu(),
+        )
 
 
 @router.callback_query(lambda c: c.data == "menu")
