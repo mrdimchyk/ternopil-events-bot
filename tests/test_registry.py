@@ -1,20 +1,20 @@
-from app.collectors.registry import COLLECTORS, validate_collectors
+from app.collectors.registry import COLLECTORS, OPTIONAL_COLLECTORS, PRODUCTION_COLLECTORS, validate_collectors
 
 
-def test_registry_has_six_sources():
-    names = [name for name, _, _ in COLLECTORS]
-    assert names == [
-        "KARABAS",
-        "Numotamo",
-        "Teatr.org.ua",
-        "TicketsBox",
-        "Ticket.kiev.ua",
-        "Concert.ua",
-    ]
+def test_production_registry_contains_only_verified_mvp_collector():
+    assert COLLECTORS == PRODUCTION_COLLECTORS
+    assert [name for name, _, _ in COLLECTORS] == ["KARABAS"]
+
+
+def test_optional_registry_keeps_unverified_adapters_out_of_production():
+    assert OPTIONAL_COLLECTORS
+    assert not {name for name, _, _ in OPTIONAL_COLLECTORS} & {
+        name for name, _, _ in COLLECTORS
+    }
 
 
 def test_registry_collectors_are_callable():
-    assert all(callable(collector) for _, _, collector in COLLECTORS)
+    assert all(callable(collector) for _, _, collector in [*COLLECTORS, *OPTIONAL_COLLECTORS])
 
 
 def test_registry_contract_is_valid():
