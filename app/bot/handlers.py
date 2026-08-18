@@ -75,24 +75,23 @@ def _format_event(item: CanonicalDbEvent) -> str:
     return f"🎟️ <b>{title}</b>\n📅 {date}\n🕐 {time}\n{venue}\n{price}"
 
 
-def _events_keyboard(events: list[CanonicalDbEvent], favorite_keys: set[str], notification_keys: set[str]) -> InlineKeyboardMarkup:
+def _event_keyboard(item: CanonicalDbEvent, favorite_keys: set[str], notification_keys: set[str]) -> InlineKeyboardMarkup:
+    event = item.representative
     rows = []
-    for item in events:
-        event = item.representative
-        favorite_label = "💛 В обраному" if event.group_key in favorite_keys else "❤️ Додати в обране"
-        notification_label = "🔕 Вимкнути нагадування" if event.group_key in notification_keys else "🔔 Нагадати за 24 год"
-        favorite_data = f"favorite_id:{event.id}"
-        notification_data = f"notify_id:{event.id}"
-        # Keep callback payloads tiny and deterministic; Telegram allows max 64 bytes.
-        if len(favorite_data.encode("utf-8")) <= 64:
-            rows.append([InlineKeyboardButton(text=favorite_label, callback_data=favorite_data)])
-        if len(notification_data.encode("utf-8")) <= 64:
-            rows.append([InlineKeyboardButton(text=notification_label, callback_data=notification_data)])
-        offers = [s for s in item.sources if s.ticket_url]
-        for index, source in enumerate(offers, start=1):
-            label = f"🎟️ {title_without_embedded_datetime(event.title)[:38]}" if len(offers) == 1 else f"🎟️ {title_without_embedded_datetime(event.title)[:32]} — квитки {index}"
-            rows.append([InlineKeyboardButton(text=label, url=source.ticket_url)])
-    rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
+    favorite_label = "💛 В обраному" if event.group_key in favorite_keys else "❤️ Додати в обране"
+    notification_label = "🔕 Вимкнути нагадування" if event.group_key in notification_keys else "🔔 Нагадати за 24 год"
+    favorite_data = f"favorite_id:{event.id}"
+    notification_data = f"notify_id:{event.id}"
+    if len(favorite_data.encode("utf-8")) <= 64:
+        rows.append([InlineKeyboardButton(text=favorite_label, callback_data=favorite_data)])
+    if len(notification_data.encode("utf-8")) <= 64:
+        rows.append([InlineKeyboardButton(text=notification_label, callback_data=notification_data)])
+
+    offers = [s for s in item.sources if s.ticket_url]
+    for index, source in enumerate(offers, start=1):
+        clean_title = title_without_embedded_datetime(event.title)
+        label = f"🎟️ {clean_title[:38]}" if len(offers) == 1 else f"🎟️ {clean_title[:32]} — квитки {index}"
+        rows.append([InlineKeyboardButton(text=label, url=source.ticket_url)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -105,6 +104,7 @@ async def _send_events(message: Message, events: list[CanonicalDbEvent], heading
     if not events:
         await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
+
     favorite_keys: set[str] = set()
     notification_keys: set[str] = set()
     try:
@@ -113,10 +113,20 @@ async def _send_events(message: Message, events: list[CanonicalDbEvent], heading
             notification_keys = notification_group_keys(session, message.from_user.id)
     except Exception:
         pass
-    text = f"📅 <b>{heading}</b>\n\n" + "\n\n".join(_format_event(item) for item in events[:20])
+
+    # Telegram attaches one inline keyboard to one message. Therefore every
+    # event is sent as its own message so its buttons stay directly below it.
+    await message.answer(f"📅 <b>{heading}</b>")
+    displayed = events[:20]
+    for item in displayed:
+        await message.answer(
+            _format_event(item),
+            reply_markup=_event_keyboard(item, favorite_keys, notification_keys),
+        )
     if len(events) > 20:
-        text += f"\n\n…і ще {len(events) - 20} подій."
-    await message.answer(text, reply_markup=_events_keyboard(events[:20], favorite_keys, notification_keys))
+        await message.answer(f"…і ще {len(events) - 20} подій.", reply_markup=main_menu())
+    else:
+        await message.answer("Оберіть дію або поверніться до меню:", reply_markup=main_menu())
 
 
 async def _send_day(message: Message, offset: int) -> None:
@@ -145,11 +155,7 @@ async def _run_search(message: Message, query: str) -> None:
             events = search_canonical_events(session, query, start=start)
         await _send_events(message, events, f"Результати пошуку: «{query}»")
     except Exception as exc:
-        await message.answer(
-            "⚠️ Під час пошуку сталася помилка.\n"
-            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
-            reply_markup=main_menu(),
-        )
+        await message.answer("⚠️ Під час пошуку сталася помилка.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
 
 @router.message(CommandStart())
@@ -188,11 +194,7 @@ async def day_events(callback: CallbackQuery):
     try:
         await _send_day(callback.message, 0 if callback.data == "events:today" else 1)
     except Exception as exc:
-        await callback.message.answer(
-            "⚠️ Не вдалося завантажити події.\n"
-            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
-            reply_markup=main_menu(),
-        )
+        await callback.message.answer("⚠️ Не вдалося завантажити події.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data == "events:weekend")
@@ -204,11 +206,7 @@ async def weekend_events(callback: CallbackQuery):
             events = canonical_events_for_range(session, start, end)
         await _send_events(callback.message, events, "Події цими вихідними у Тернополі")
     except Exception as exc:
-        await callback.message.answer(
-            "⚠️ Не вдалося завантажити вихідні.\n"
-            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
-            reply_markup=main_menu(),
-        )
+        await callback.message.answer("⚠️ Не вдалося завантажити вихідні.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data == "categories")
@@ -219,18 +217,11 @@ async def categories(callback: CallbackQuery):
         end = start + timedelta(days=30)
         with SessionLocal() as session:
             counts = category_counts(session, start, end)
-        rows = [
-            [InlineKeyboardButton(text=f"🎭 {name} ({count})", callback_data=f"category:{index}")]
-            for index, (name, count) in enumerate(counts[:12])
-        ]
+        rows = [[InlineKeyboardButton(text=f"🎭 {name} ({count})", callback_data=f"category:{index}")] for index, (name, count) in enumerate(counts[:12])]
         rows.append([InlineKeyboardButton(text="⬅️ Меню", callback_data="menu")])
         await callback.message.answer("Оберіть категорію на найближчі 30 днів:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     except Exception as exc:
-        await callback.message.answer(
-            "⚠️ Не вдалося завантажити категорії.\n"
-            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
-            reply_markup=main_menu(),
-        )
+        await callback.message.answer("⚠️ Не вдалося завантажити категорії.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("category:"))
@@ -253,11 +244,7 @@ async def category_events(callback: CallbackQuery):
             events = canonical_events_for_category(session, category, start, end)
         await _send_events(callback.message, events, f"{category} — найближчі 30 днів")
     except Exception as exc:
-        await callback.message.answer(
-            "⚠️ Не вдалося завантажити події категорії.\n"
-            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
-            reply_markup=main_menu(),
-        )
+        await callback.message.answer("⚠️ Не вдалося завантажити події категорії.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("favorite_id:"))
@@ -308,11 +295,7 @@ async def favorites(callback: CallbackQuery):
             events = favorite_events(session, callback.from_user.id, _local_now())
         await _send_events(callback.message, events, "Моє обране")
     except Exception as exc:
-        await callback.message.answer(
-            "⚠️ Не вдалося завантажити обране.\n"
-            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
-            reply_markup=main_menu(),
-        )
+        await callback.message.answer("⚠️ Не вдалося завантажити обране.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data == "notifications")
@@ -323,11 +306,7 @@ async def notifications(callback: CallbackQuery):
             keys = notification_group_keys(session, callback.from_user.id)
         await callback.message.answer(f"🔔 <b>Сповіщення</b>\n\nАктивних нагадувань: {len(keys)}\n\nНагадування надсилаються за 24 години до події.", reply_markup=main_menu())
     except Exception as exc:
-        await callback.message.answer(
-            "⚠️ Не вдалося завантажити сповіщення.\n"
-            f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>",
-            reply_markup=main_menu(),
-        )
+        await callback.message.answer("⚠️ Не вдалося завантажити сповіщення.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data == "menu")
