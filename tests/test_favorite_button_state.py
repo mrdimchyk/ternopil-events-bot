@@ -14,7 +14,7 @@ def _item(group_key="g1"):
         start_at=None,
         venue=None,
     )
-    source = SimpleNamespace(price_text=None, ticket_url=None)
+    source = SimpleNamespace(group_key=group_key, price_text=None, ticket_url=None)
     return SimpleNamespace(representative=event, sources=[source])
 
 
