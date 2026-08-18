@@ -6,7 +6,7 @@ from pathlib import Path
 from app.collectors.registry import COLLECTORS
 from app.db.session import SessionLocal, init_db
 from app.services.canonical_events import build_canonical_events
-from app.services.data_quality import find_duplicate_candidates, validate_events
+from app.services.data_quality import enrich_missing_start_at, find_duplicate_candidates, validate_events
 from app.services.events import apply_canonical_group_keys, upsert_events
 from app.services.source_health import source_health_report
 from app.services.source_runs import finish_run, start_run
@@ -25,6 +25,7 @@ def main() -> None:
     quality_errors = 0
     quality_warnings = 0
     quality_issues = []
+    repaired_dates = 0
 
     for source_name, base_url, collect in COLLECTORS:
         with SessionLocal() as session:
@@ -33,6 +34,8 @@ def main() -> None:
 
         try:
             raw_events = collect()
+            repaired = enrich_missing_start_at(raw_events, default_year=datetime.now().year)
+            repaired_dates += repaired
             events_by_source[source_name] = raw_events
             if not raw_events and source_name not in ALLOW_EMPTY_SOURCES:
                 raise RuntimeError(
@@ -74,7 +77,7 @@ def main() -> None:
             totals["changed"] += changed
             print(
                 f"{source_name}: collected={len(raw_events)} "
-                f"changed={changed} quality_errors={len(errors)} "
+                f"changed={changed} repaired_dates={repaired} quality_errors={len(errors)} "
                 f"quality_warnings={len(warnings)}"
             )
         except Exception as exc:
@@ -134,6 +137,7 @@ def main() -> None:
         "quality": {
             "invalid_events": quality_errors,
             "warnings": quality_warnings,
+            "repaired_dates": repaired_dates,
             "issues": [asdict(issue) for issue in quality_issues],
         },
         "duplicate_candidates": [asdict(duplicate) for duplicate in duplicates],
@@ -145,7 +149,8 @@ def main() -> None:
 
     print(
         f"QUALITY SUMMARY: invalid_events={quality_errors} "
-        f"warnings={quality_warnings} duplicate_candidates={len(duplicates)}"
+        f"warnings={quality_warnings} repaired_dates={repaired_dates} "
+        f"duplicate_candidates={len(duplicates)}"
     )
     print(f"SOURCE HEALTH: overall={health['overall']}")
     for source, item in health["sources"].items():
