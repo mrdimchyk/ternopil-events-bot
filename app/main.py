@@ -12,7 +12,7 @@ from sqlalchemy import text
 from app.bot.handlers import router
 from app.config import settings
 from app.db.session import SessionLocal, init_db
-from app.jobs.notification_worker import notification_loop
+from app.services.notification_worker import notification_worker
 
 
 async def run_webhook_app() -> web.Application:
@@ -112,9 +112,7 @@ async def initialize_runtime(app: web.Application) -> None:
             app["polling_task"] = polling_task
             print("Telegram polling started (no public Render URL detected)")
 
-        app["notification_worker_task"] = asyncio.create_task(
-            notification_loop(bot, asyncio.Event())
-        )
+        app["notification_worker_task"] = asyncio.create_task(notification_worker(bot, interval_seconds=60))
         app["runtime_ready"] = True
         print("Notification worker started (60s interval)")
         print("Runtime initialization complete")
