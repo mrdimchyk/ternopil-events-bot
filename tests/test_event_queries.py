@@ -90,3 +90,27 @@ def test_same_occurrence_with_date_in_title_is_deduplicated():
 
     assert len(result) == 1
     assert len(result[0].sources) == 2
+
+
+def test_same_occurrence_with_appended_source_metadata_is_deduplicated():
+    first = make_event(
+        1,
+        "first-key",
+        "Chico & Qatoshi x TIK | День Незалежності",
+        1,
+        "https://example.com/1",
+        datetime(2026, 8, 22, 16, 0),
+    )
+    second = make_event(
+        2,
+        "second-key",
+        "Chico & Qatoshi x TIK | День Незалежності 22 серпня 2026 16:00 Тернопіль Агроленд від 600₴ Квитки",
+        2,
+        "https://example.com/2",
+        datetime(2026, 8, 22, 16, 0),
+    )
+
+    result = canonicalize_db_events([first, second])
+
+    assert len(result) == 1
+    assert len(result[0].sources) == 2
