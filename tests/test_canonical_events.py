@@ -83,6 +83,47 @@ def test_aware_and_naive_datetimes_can_be_compared():
     assert len(result[0].sources) == 2
 
 
+def test_embedded_date_in_title_does_not_create_duplicate():
+    first = event(
+        "k1",
+        "Лос Янковерс. Колумбійці, які співають українські пісні",
+        "https://karabas.com/1",
+        datetime(2026, 9, 9, 18, 0),
+    )
+    second = event(
+        "t1",
+        "Лос Янковерс. Колумбійці, які співають українські пісні 9 вересня 2026 18:00",
+        "https://teatr.org.ua/1",
+        datetime(2026, 9, 9, 18, 0),
+    )
+
+    result = build_canonical_events({"KARABAS": [first], "Teatr.org.ua": [second]})
+
+    assert len(result) == 1
+    assert result[0].title == "Лос Янковерс. Колумбійці, які співають українські пісні"
+    assert len(result[0].sources) == 2
+
+
+def test_same_event_at_two_times_remains_two_canonical_events():
+    first = event(
+        "k16",
+        "ТІК. Найкраще",
+        "https://karabas.com/16",
+        datetime(2026, 8, 22, 16, 0),
+    )
+    second = event(
+        "k19",
+        "ТІК. Найкраще",
+        "https://karabas.com/19",
+        datetime(2026, 8, 22, 19, 0),
+    )
+
+    result = build_canonical_events({"KARABAS": [first, second]})
+
+    assert len(result) == 2
+    assert [item.start_at.hour for item in result] == [16, 19]
+
+
 def test_real_production_duplicate_fixture_forms_three_canonical_events():
     fixture_path = Path(__file__).parent / "fixtures" / "canonical_duplicates_oct_2026.json"
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
