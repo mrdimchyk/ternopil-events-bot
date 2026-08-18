@@ -28,17 +28,17 @@ def _match_title(value: str) -> str:
 
 
 def _title_tokens(value: str) -> set[str]:
-    return set(re.findall(r"\\w+", _match_title(value), flags=re.UNICODE))
+    return set(re.findall(r"\w+", _match_title(value), flags=re.UNICODE))
 
 
 def _title_variant_match(a: Event, b: Event) -> bool:
-    """Allow a source to append venue/price/ticket metadata to the same title."""
+    """Allow source metadata suffixes without merging unrelated events."""
     title_a = _match_title(a.title)
     title_b = _match_title(b.title)
     if title_a == title_b:
-        # Different group keys with literally identical titles are intentionally
-        # kept separate: the grouping key may represent distinct source events.
-        return a.group_key == b.group_key
+        # Exact normalized titles at the same time are the same occurrence even
+        # when source-specific group keys differ.
+        return True
 
     if SequenceMatcher(None, title_a, title_b).ratio() >= 0.90:
         return True
@@ -46,9 +46,8 @@ def _title_variant_match(a: Event, b: Event) -> bool:
     short, long = sorted((_title_tokens(a.title), _title_tokens(b.title)), key=len)
     if len(short) < 3:
         return False
-    # One source often appends "Тернопіль ... від 600 грн Квитки". If nearly all
-    # meaningful tokens from the shorter title occur in the longer one, treat it
-    # as a source variant, provided venue/time checks below also agree.
+    # Source pages commonly append venue/price/ticket metadata. Require nearly
+    # all tokens of the shorter title to occur in the longer variant.
     return len(short & long) / len(short) >= 0.85
 
 
