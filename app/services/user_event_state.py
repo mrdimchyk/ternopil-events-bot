@@ -1,6 +1,7 @@
+from datetime import timedelta
+
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
 from app.services.event_queries import canonicalize_db_events
@@ -17,8 +18,8 @@ def related_group_keys(session: Session, group_key: str) -> set[str]:
     if seed is None or seed.start_at is None:
         return {group_key}
 
-    window_start = seed.start_at
-    window_end = seed.start_at
+    window_start = seed.start_at - timedelta(minutes=15)
+    window_end = seed.start_at + timedelta(minutes=15)
     candidates = list(
         session.scalars(
             select(Event)
