@@ -35,24 +35,27 @@ def test_favorite_is_idempotent_and_user_scoped():
     assert favorite_group_keys(session, 9_000_000_002) == set()
 
 
-def test_favorite_state_expands_across_canonical_source_variants():
+def test_favorite_events_include_all_canonical_sources_even_with_different_group_keys():
     session = make_session()
     session.add_all([
         Source(id=1, name="A", base_url="https://a.example"),
         Source(id=2, name="B", base_url="https://b.example"),
+        Source(id=3, name="C", base_url="https://c.example"),
     ])
     start = datetime.now() + timedelta(days=1)
     session.add_all([
         make_event(1, "a1", "group-a", start),
         make_event(2, "b1", "group-b", start),
+        make_event(3, "c1", "group-c", start),
     ])
     session.commit()
 
     add_favorite(session, 42, "group-b")
 
-    assert favorite_group_keys(session, 42) == {"group-a", "group-b"}
-    assert remove_favorite(session, 42, "group-a") is True
-    assert favorite_group_keys(session, 42) == set()
+    result = favorite_events(session, 42, datetime.now())
+
+    assert len(result) == 1
+    assert {source.group_key for source in result[0].sources} == {"group-a", "group-b", "group-c"}
 
 
 def test_favorite_events_keep_canonical_sources_together():
