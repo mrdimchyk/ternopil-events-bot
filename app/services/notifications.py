@@ -69,19 +69,18 @@ def unsubscribe_favorite(session: Session, telegram_id: int, group_key: str) -> 
 
 
 def notification_group_keys(session: Session, telegram_id: int) -> set[str]:
+    """Return raw enabled subscription keys; canonicalize only when listing events."""
     user = session.scalar(select(TelegramUser).where(TelegramUser.telegram_id == telegram_id))
     if user is None:
         return set()
-    rows = session.scalars(
-        select(FavoriteNotification.group_key).where(
-            FavoriteNotification.user_id == user.id,
-            FavoriteNotification.enabled.is_(True),
-        )
-    ).all()
-    expanded: set[str] = set()
-    for key in rows:
-        expanded.update(related_group_keys(session, key))
-    return expanded
+    return set(
+        session.scalars(
+            select(FavoriteNotification.group_key).where(
+                FavoriteNotification.user_id == user.id,
+                FavoriteNotification.enabled.is_(True),
+            )
+        ).all()
+    )
 
 
 def tomorrow_events(session: Session, now: datetime | None = None) -> list[Event]:
