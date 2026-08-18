@@ -65,6 +65,9 @@ def _status_for_runs(
     elif zero_result:
         status = "degraded"
         message = "Latest run returned zero events; inspect the collector/parser."
+    elif anomaly:
+        status = "degraded"
+        message = f"Latest count {latest_count} is below 50% of the historical median {baseline:.1f}."
     elif freshness_stale:
         # A source can be perfectly operational while simply having no events
         # in the next week. Keep this visible as informational/quiet rather
@@ -77,9 +80,6 @@ def _status_for_runs(
             )
         else:
             message = f"No active events in the next {FRESHNESS_WINDOW_DAYS} days."
-    elif anomaly:
-        status = "degraded"
-        message = f"Latest count {latest_count} is below 50% of the historical median {baseline:.1f}."
     elif len(runs) < minimum_runs:
         status = "warming"
         message = f"Only {len(runs)} run(s) available; anomaly baseline is still warming up."
