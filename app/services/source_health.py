@@ -46,6 +46,8 @@ def _status_for_runs(
         and latest.status == "success"
         and latest_count
         and events_next_7d == 0
+        and next_event_at is not None
+        and next_event_at >= (latest.started_at + timedelta(days=FRESHNESS_WINDOW_DAYS))
         and not allow_empty
     )
 
