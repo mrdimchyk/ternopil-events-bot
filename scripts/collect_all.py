@@ -153,6 +153,9 @@ def main() -> None:
             f"SOURCE HEALTH: {source} status={item['status']} "
             f"latest_collected={item['latest_collected']} "
             f"median_collected={item['median_collected']} "
+            f"events_next_7d={item['events_next_7d']} "
+            f"next_event_at={item['next_event_at']} "
+            f"freshness_stale={item['freshness_stale']} "
             f"message={item['message']}"
         )
     print(
