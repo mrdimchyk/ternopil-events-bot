@@ -34,14 +34,14 @@ def test_canonical_query_collapses_duplicate_sources_and_keeps_offers():
     }
 
 
-def test_canonical_query_does_not_merge_different_group_keys():
+def test_identical_title_same_time_is_deduplicated_even_with_different_group_keys():
     first = make_event(1, "a", "Одна вистава", 1, "https://example.com/1")
     second = make_event(2, "b", "Одна вистава", 2, "https://example.com/2")
 
     result = canonicalize_db_events([first, second])
 
-    assert len(result) == 2
-    assert all(len(item.sources) == 1 for item in result)
+    assert len(result) == 1
+    assert len(result[0].sources) == 2
 
 
 def test_repeated_event_at_two_times_is_shown_twice():
