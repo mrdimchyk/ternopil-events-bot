@@ -77,13 +77,16 @@ def canonical_events_for_range(session: Session, start: datetime, end: datetime)
 def category_counts(session: Session, start: datetime, end: datetime) -> list[tuple[str, int]]:
     start = _utc(start)
     end = _utc(end)
+    # Group by the raw nullable column and apply the display fallback in Python.
+    # This avoids PostgreSQL treating separately-bound COALESCE parameters as
+    # different GROUP BY expressions and raising GroupingError.
     rows = session.execute(
-        select(func.coalesce(Event.category, "Інше"), func.count(func.distinct(Event.group_key)))
+        select(Event.category, func.count(func.distinct(Event.group_key)))
         .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
-        .group_by(func.coalesce(Event.category, "Інше"))
+        .group_by(Event.category)
         .order_by(func.count(func.distinct(Event.group_key)).desc())
     ).all()
-    return [(str(category), int(count)) for category, count in rows]
+    return [(str(category) if category else "Інше", int(count)) for category, count in rows]
 
 
 def canonical_events_for_category(
