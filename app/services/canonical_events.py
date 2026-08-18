@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from app.collectors.base import RawEvent
-from app.services.event_identity import make_group_key, normalize_title
+from app.services.event_identity import make_group_key, normalize_title, title_without_embedded_datetime
 
 
 @dataclass(slots=True)
@@ -34,13 +34,32 @@ def _comparison_time(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def _normalized_event_title(value: str) -> str:
+    return normalize_title(title_without_embedded_datetime(value))
+
+
 def _same_event(a: RawEvent, b: RawEvent, time_tolerance_minutes: int = 15) -> bool:
     if a.start_at is None or b.start_at is None:
         return False
     delta = _comparison_time(a.start_at) - _comparison_time(b.start_at)
     if abs(delta.total_seconds()) > time_tolerance_minutes * 60:
         return False
-    return SequenceMatcher(None, normalize_title(a.title), normalize_title(b.title)).ratio() >= 0.90
+
+    title_similarity = SequenceMatcher(
+        None,
+        _normalized_event_title(a.title),
+        _normalized_event_title(b.title),
+    ).ratio()
+    if title_similarity < 0.90:
+        return False
+
+    venue_a = normalize_title(a.venue or "")
+    venue_b = normalize_title(b.venue or "")
+    if venue_a and venue_b and venue_a != venue_b:
+        if SequenceMatcher(None, venue_a, venue_b).ratio() < 0.80:
+            return False
+
+    return True
 
 
 def build_canonical_events(events_by_source: dict[str, list[RawEvent]]) -> list[CanonicalEvent]:
@@ -69,7 +88,7 @@ def build_canonical_events(events_by_source: dict[str, list[RawEvent]]) -> list[
         result.append(
             CanonicalEvent(
                 key=key_basis,
-                title=representative.title,
+                title=title_without_embedded_datetime(representative.title),
                 start_at=start_at,
                 venue=representative.venue,
                 address=representative.address,
