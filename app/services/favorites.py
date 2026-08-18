@@ -33,27 +33,29 @@ def remove_favorite(session: Session, user_id: int, group_key: str) -> bool:
 
 
 def favorite_group_keys(session: Session, user_id: int) -> set[str]:
-    rows = session.scalars(select(Favorite.group_key).where(Favorite.user_id == user_id)).all()
-    expanded: set[str] = set()
-    for key in rows:
-        expanded.update(related_group_keys(session, key))
-    return expanded
+    return set(session.scalars(select(Favorite.group_key).where(Favorite.user_id == user_id)).all())
 
 
 def favorite_events(session: Session, user_id: int, now: datetime) -> list[CanonicalDbEvent]:
-    keys = favorite_group_keys(session, user_id)
-    if not keys:
+    """Return canonical occurrences for which at least one source is favorited."""
+    favorite_keys = favorite_group_keys(session, user_id)
+    if not favorite_keys:
         return []
+
     events = list(
         session.scalars(
             select(Event)
             .options(selectinload(Event.venue))
             .where(
-                Event.group_key.in_(keys),
                 Event.start_at >= now,
                 Event.status == "active",
             )
             .order_by(Event.start_at, Event.title)
         ).all()
     )
-    return canonicalize_db_events(events)
+    canonical = canonicalize_db_events(events)
+    return [
+        item
+        for item in canonical
+        if any(source.group_key in favorite_keys for source in item.sources)
+    ]
