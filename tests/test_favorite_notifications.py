@@ -5,7 +5,12 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base, Event
 from app.db.user_models import FavoriteNotification
-from app.services.notifications import due_notifications, subscribe_favorite, unsubscribe_favorite
+from app.services.notifications import (
+    due_notifications,
+    notification_group_keys,
+    subscribe_favorite,
+    unsubscribe_favorite,
+)
 
 
 def session():
@@ -20,6 +25,24 @@ def test_subscription_is_idempotent_and_user_scoped():
     assert subscribe_favorite(db, 10000000001, "g1") is False
     assert subscribe_favorite(db, 10000000002, "g1") is True
     assert db.query(FavoriteNotification).count() == 2
+
+
+def test_notification_state_expands_across_canonical_source_variants():
+    db = session()
+    start = datetime(2026, 8, 23, 19, 0)
+    db.add_all(
+        [
+            Event(external_id="source-a", group_key="g1", title="Jamala", start_at=start, source_id=1, source_url="https://example.com/a", status="active"),
+            Event(external_id="source-b", group_key="g2", title="Jamala", start_at=start, source_id=2, source_url="https://example.com/b", status="active"),
+        ]
+    )
+    db.flush()
+
+    subscribe_favorite(db, 10000000001, "g2")
+
+    assert notification_group_keys(db, 10000000001) == {"g1", "g2"}
+    assert unsubscribe_favorite(db, 10000000001, "g1") is True
+    assert notification_group_keys(db, 10000000001) == set()
 
 
 def test_due_notification_is_emitted_once():
