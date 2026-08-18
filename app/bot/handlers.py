@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.config import settings
@@ -13,6 +15,10 @@ from app.services.favorites import add_favorite, favorite_events, favorite_group
 from app.services.notifications import notification_group_keys, subscribe_favorite, unsubscribe_favorite
 
 router = Router()
+
+
+class SearchState(StatesGroup):
+    waiting_for_query = State()
 
 
 def _local_now() -> datetime:
@@ -95,33 +101,57 @@ def _weekend_range() -> tuple[datetime, datetime]:
     return saturday, saturday + timedelta(days=2)
 
 
+async def _run_search(message: Message, query: str) -> None:
+    query = " ".join(query.split()).strip()
+    if not query:
+        await message.answer("🔎 Напишіть назву або слово для пошуку, наприклад: <b>театр</b> або <b>Гомін</b>")
+        return
+    start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        with SessionLocal() as session:
+            events = search_canonical_events(session, query, start=start)
+        await _send_events(message, events, f"Результати пошуку: «{query}»")
+    except Exception:
+        await message.answer("⚠️ Під час пошуку сталася помилка. Спробуйте ще раз.", reply_markup=main_menu())
+
+
 @router.message(CommandStart())
-async def start(message: Message):
+async def start(message: Message, state: FSMContext):
+    await state.clear()
     await message.answer("Привіт! 👋\n\nЯ допоможу знайти цікаві події в Тернополі.", reply_markup=main_menu())
 
 
 @router.message(Command("search"))
-async def search(message: Message):
+async def search(message: Message, state: FSMContext):
     query = (message.text or "").partition(" ")[2].strip()
+    await state.clear()
     if not query:
-        await message.answer("🔎 Напишіть запит після команди, наприклад:\n/search театр\n/search Гомін")
+        await state.set_state(SearchState.waiting_for_query)
+        await message.answer("🔎 Напишіть назву або слово для пошуку. Наприклад: <b>театр</b> або <b>Гомін</b>.")
         return
-    start = _local_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    with SessionLocal() as session:
-        events = search_canonical_events(session, query, start=start)
-    await _send_events(message, events, f"Результати пошуку: «{query}»")
+    await _run_search(message, query)
 
 
 @router.callback_query(lambda c: c.data == "search")
-async def search_help(callback: CallbackQuery):
+async def search_help(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await callback.message.answer("🔎 Для пошуку напишіть команду, наприклад:\n/search театр\n/search Гомін")
+    await state.set_state(SearchState.waiting_for_query)
+    await callback.message.answer("🔎 Напишіть назву або слово для пошуку. Наприклад: <b>театр</b> або <b>Гомін</b>.")
+
+
+@router.message(SearchState.waiting_for_query, F.text)
+async def search_text(message: Message, state: FSMContext):
+    await state.clear()
+    await _run_search(message, message.text or "")
 
 
 @router.callback_query(lambda c: c.data in {"events:today", "events:tomorrow"})
 async def day_events(callback: CallbackQuery):
     await callback.answer()
-    await _send_day(callback.message, 0 if callback.data == "events:today" else 1)
+    try:
+        await _send_day(callback.message, 0 if callback.data == "events:today" else 1)
+    except Exception:
+        await callback.message.answer("⚠️ Не вдалося завантажити події. Спробуйте ще раз.", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data == "events:weekend")
