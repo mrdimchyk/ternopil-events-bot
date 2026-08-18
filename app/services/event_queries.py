@@ -1,8 +1,9 @@
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
@@ -119,18 +120,10 @@ def canonical_events_for_range(session: Session, start: datetime, end: datetime)
 
 
 def category_counts(session: Session, start: datetime, end: datetime) -> list[tuple[str, int]]:
-    start = _utc(start)
-    end = _utc(end)
-    # Group by the raw nullable column and apply the display fallback in Python.
-    # This avoids PostgreSQL treating separately-bound COALESCE parameters as
-    # different GROUP BY expressions and raising GroupingError.
-    rows = session.execute(
-        select(Event.category, func.count(func.distinct(Event.group_key)))
-        .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
-        .group_by(Event.category)
-        .order_by(func.count(func.distinct(Event.group_key)).desc())
-    ).all()
-    return [(str(category) if category else "Інше", int(count)) for category, count in rows]
+    """Count distinct displayed occurrences, not raw source rows."""
+    events = canonical_events_for_range(session, start, end)
+    counts = Counter((item.representative.category or "Інше") for item in events)
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
 
 
 def canonical_events_for_category(
@@ -146,9 +139,13 @@ def canonical_events_for_category(
                 Event.start_at >= start,
                 Event.start_at < end,
                 Event.status == "active",
-                func.coalesce(Event.category, "Інше") == category,
             )
             .order_by(Event.start_at, Event.title)
         ).all()
     )
-    return canonicalize_db_events(events)
+    canonical = canonicalize_db_events(events)
+    return [
+        item
+        for item in canonical
+        if (item.representative.category or "Інше") == category
+    ]
