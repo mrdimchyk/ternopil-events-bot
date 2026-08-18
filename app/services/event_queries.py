@@ -11,6 +11,7 @@ from app.services.event_identity import (
     normalize_title,
     title_variant_match,
     title_without_embedded_datetime,
+    venue_variant_match,
 )
 
 
@@ -42,9 +43,8 @@ def _same_occurrence(a: Event, b: Event, time_tolerance_minutes: int = 15) -> bo
 
     venue_a = normalize_title(a.venue.name if a.venue else "")
     venue_b = normalize_title(b.venue.name if b.venue else "")
-    if venue_a and venue_b and venue_a != venue_b:
-        if SequenceMatcher(None, venue_a, venue_b).ratio() < 0.80:
-            return False
+    if venue_a and venue_b and not venue_variant_match(venue_a, venue_b):
+        return False
 
     return True
 
