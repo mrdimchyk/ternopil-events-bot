@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
+from app.services.event_identity import normalize_title, title_without_embedded_datetime
 
 
 @dataclass(slots=True)
@@ -17,6 +19,29 @@ def _utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _match_title(value: str) -> str:
+    return normalize_title(title_without_embedded_datetime(value))
+
+
+def _same_occurrence(a: Event, b: Event, time_tolerance_minutes: int = 15) -> bool:
+    """Match source variants only when they describe the same occurrence."""
+    if a.start_at is None or b.start_at is None:
+        return False
+    if abs((_utc(a.start_at) - _utc(b.start_at)).total_seconds()) > time_tolerance_minutes * 60:
+        return False
+
+    if SequenceMatcher(None, _match_title(a.title), _match_title(b.title)).ratio() < 0.90:
+        return False
+
+    venue_a = normalize_title(a.venue.name if a.venue else "")
+    venue_b = normalize_title(b.venue.name if b.venue else "")
+    if venue_a and venue_b and venue_a != venue_b:
+        if SequenceMatcher(None, venue_a, venue_b).ratio() < 0.80:
+            return False
+
+    return True
 
 
 def events_for_day(session: Session, day: datetime) -> list[Event]:
@@ -33,18 +58,37 @@ def events_for_day(session: Session, day: datetime) -> list[Event]:
 
 
 def canonicalize_db_events(events: list[Event]) -> list[CanonicalDbEvent]:
-    """Collapse source records by group_key without dropping ticket offers."""
-    groups: dict[str, list[Event]] = {}
+    """Collapse duplicate source records but keep every distinct occurrence/time."""
+    clusters: list[list[Event]] = []
+
     for event in events:
-        groups.setdefault(event.group_key, []).append(event)
+        matched = False
+        for cluster in clusters:
+            representative = cluster[0]
+            # A group_key is strong evidence, but time is authoritative: two
+            # showings of the same production must remain two results.
+            if event.group_key == representative.group_key:
+                if event.start_at is None or representative.start_at is None:
+                    continue
+                if abs((_utc(event.start_at) - _utc(representative.start_at)).total_seconds()) > 15 * 60:
+                    continue
+                cluster.append(event)
+                matched = True
+                break
+            if _same_occurrence(event, representative):
+                cluster.append(event)
+                matched = True
+                break
+        if not matched:
+            clusters.append([event])
 
     result: list[CanonicalDbEvent] = []
-    for members in groups.values():
+    for members in clusters:
         representative = sorted(
             members,
             key=lambda event: (
                 event.start_at or datetime.max,
-                -len(event.title),
+                -len(_match_title(event.title)),
                 event.source_id,
             ),
         )[0]
