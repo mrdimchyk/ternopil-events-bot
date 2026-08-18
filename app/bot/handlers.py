@@ -6,6 +6,8 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db.session import SessionLocal
@@ -15,6 +17,7 @@ from app.services.event_queries import (
     canonical_events_for_category,
     canonical_events_for_range,
     canonical_events_for_day,
+    canonicalize_db_events,
     category_counts,
 )
 from app.services.event_identity import title_without_embedded_datetime
@@ -101,13 +104,12 @@ def _event_group_key(session, event_id: int) -> str | None:
 
 
 async def _refresh_event_action_buttons(callback: CallbackQuery, *, favorite: bool | None = None, notification: bool | None = None) -> None:
-    """Update only the favorite/reminder labels while preserving ticket buttons."""
     message = callback.message
     if not message or not message.reply_markup:
         return
 
     rows: list[list[InlineKeyboardButton]] = []
-    for row_index, row in enumerate(message.reply_markup.inline_keyboard):
+    for row in message.reply_markup.inline_keyboard:
         new_row: list[InlineKeyboardButton] = []
         for button in row:
             text = button.text
@@ -115,17 +117,13 @@ async def _refresh_event_action_buttons(callback: CallbackQuery, *, favorite: bo
                 text = "💛 В обраному" if favorite else "❤️ Додати в обране"
             elif notification is not None and button.callback_data and button.callback_data.startswith("notify_id:"):
                 text = "🔕 Вимкнути нагадування" if notification else "🔔 Нагадати за 24 год"
-            if text == button.text:
-                new_row.append(button)
-            else:
-                new_row.append(button.model_copy(update={"text": text}))
+            new_row.append(button if text == button.text else button.model_copy(update={"text": text}))
         rows.append(new_row)
 
     await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
 async def _send_events(message: Message, events: list[CanonicalDbEvent], heading: str, user_id: int | None = None) -> None:
-    """Send events with action labels based on the actual Telegram user."""
     if not events:
         await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
@@ -143,10 +141,7 @@ async def _send_events(message: Message, events: list[CanonicalDbEvent], heading
     await message.answer(f"📅 <b>{heading}</b>")
     displayed = events[:20]
     for item in displayed:
-        await message.answer(
-            _format_event(item),
-            reply_markup=_event_keyboard(item, favorite_keys, notification_keys),
-        )
+        await message.answer(_format_event(item), reply_markup=_event_keyboard(item, favorite_keys, notification_keys))
     if len(events) > 20:
         await message.answer(f"…і ще {len(events) - 20} подій.", reply_markup=main_menu())
     else:
@@ -333,7 +328,26 @@ async def favorites(callback: CallbackQuery):
 @router.callback_query(lambda c: c.data == "notifications")
 async def notifications(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer("🔔 Нагадування вмикаються кнопкою «Нагадати за 24 год» під потрібною подією.", reply_markup=main_menu())
+    try:
+        with SessionLocal() as session:
+            keys = notification_group_keys(session, callback.from_user.id)
+            if not keys:
+                events = []
+            else:
+                rows = session.scalars(
+                    select(Event)
+                    .options(selectinload(Event.venue))
+                    .where(
+                        Event.group_key.in_(keys),
+                        Event.start_at >= _local_now(),
+                        Event.status == "active",
+                    )
+                    .order_by(Event.start_at.asc(), Event.title.asc())
+                ).all()
+                events = canonicalize_db_events(list(rows))
+        await _send_events(callback.message, events, "Мої сповіщення", user_id=callback.from_user.id)
+    except Exception as exc:
+        await callback.message.answer("⚠️ Не вдалося завантажити сповіщення.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
 
 @router.callback_query(lambda c: c.data == "menu")
