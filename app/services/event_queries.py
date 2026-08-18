@@ -61,27 +61,31 @@ def events_for_day(session: Session, day: datetime) -> list[Event]:
 
 
 def canonicalize_db_events(events: list[Event]) -> list[CanonicalDbEvent]:
-    """Collapse duplicate source records but keep every distinct occurrence/time."""
+    """Collapse duplicate source records but keep every distinct occurrence/time.
+
+    Matching is against every existing member of a cluster rather than only its
+    representative. This makes canonicalization stable when three or more
+    sources contain slightly different title/venue variants of one occurrence.
+    """
     clusters: list[list[Event]] = []
 
     for event in events:
-        matched = False
+        matched_cluster: list[Event] | None = None
         for cluster in clusters:
-            representative = cluster[0]
-            if event.group_key == representative.group_key:
-                if event.start_at is None or representative.start_at is None:
-                    continue
-                if abs((_utc(event.start_at) - _utc(representative.start_at)).total_seconds()) > 15 * 60:
-                    continue
-                cluster.append(event)
-                matched = True
+            if any(
+                event.group_key == member.group_key
+                and event.start_at is not None
+                and member.start_at is not None
+                and abs((_utc(event.start_at) - _utc(member.start_at)).total_seconds()) <= 15 * 60
+                for member in cluster
+            ) or any(_same_occurrence(event, member) for member in cluster):
+                matched_cluster = cluster
                 break
-            if _same_occurrence(event, representative):
-                cluster.append(event)
-                matched = True
-                break
-        if not matched:
+
+        if matched_cluster is None:
             clusters.append([event])
+        else:
+            matched_cluster.append(event)
 
     result: list[CanonicalDbEvent] = []
     for members in clusters:
