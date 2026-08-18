@@ -27,6 +27,14 @@ class SourceHealth:
     message: str
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _status_for_runs(
     source_name: str,
     runs: list[SourceRun],
@@ -42,14 +50,16 @@ def _status_for_runs(
     latest_count = latest.collected_count if latest else None
     zero_result = bool(latest and latest.status == "success" and latest_count == 0 and not allow_empty)
 
+    comparable_next_event_at = _as_utc(next_event_at)
+    comparable_freshness_end = _as_utc(freshness_end)
     freshness_stale = bool(
         latest
         and latest.status == "success"
         and latest_count
         and events_next_7d == 0
-        and next_event_at is not None
-        and freshness_end is not None
-        and next_event_at >= freshness_end
+        and comparable_next_event_at is not None
+        and comparable_freshness_end is not None
+        and comparable_next_event_at >= comparable_freshness_end
         and not allow_empty
     )
 
