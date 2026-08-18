@@ -54,8 +54,8 @@ def upsert_events(session, raw_events: list[RawEvent], source_name: str, base_ur
                 session.add(venue)
                 session.flush()
 
-        group_key = make_group_key(raw.title, raw.start_at, raw.venue)
         normalized_start_at = _event_datetime_utc(raw.start_at)
+        group_key = make_group_key(raw.title, normalized_start_at, raw.venue)
 
         if event is None:
             event = Event(
