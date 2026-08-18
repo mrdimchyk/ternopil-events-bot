@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from app.collectors.base import RawEvent
-from app.services.event_identity import make_group_key, normalize_title, title_without_embedded_datetime
+from app.services.event_identity import make_group_key, normalize_title, title_variant_match, title_without_embedded_datetime
 
 
 @dataclass(slots=True)
@@ -34,10 +34,6 @@ def _comparison_time(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _normalized_event_title(value: str) -> str:
-    return normalize_title(title_without_embedded_datetime(value))
-
-
 def _same_event(a: RawEvent, b: RawEvent, time_tolerance_minutes: int = 15) -> bool:
     if a.start_at is None or b.start_at is None:
         return False
@@ -45,12 +41,7 @@ def _same_event(a: RawEvent, b: RawEvent, time_tolerance_minutes: int = 15) -> b
     if abs(delta.total_seconds()) > time_tolerance_minutes * 60:
         return False
 
-    title_similarity = SequenceMatcher(
-        None,
-        _normalized_event_title(a.title),
-        _normalized_event_title(b.title),
-    ).ratio()
-    if title_similarity < 0.90:
+    if not title_variant_match(a.title, b.title):
         return False
 
     venue_a = normalize_title(a.venue or "")
