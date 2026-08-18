@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -93,7 +93,7 @@ def test_source_with_no_future_events_is_not_stale():
     assert item["next_event_at"] is None
 
 
-def test_source_with_events_only_beyond_freshness_window_is_quiet():
+def test_source_with_events_only_beyond_freshness_window_handles_naive_event_datetime():
     db = session()
     source = add_runs(db, Source(name="KARABAS", base_url="https://example.com"), [47, 46, 49, 45])
     db.add(
@@ -112,7 +112,7 @@ def test_source_with_events_only_beyond_freshness_window_is_quiet():
     report = source_health_report(
         db,
         ["KARABAS"],
-        now=datetime(2026, 8, 16, 12, 0),
+        now=datetime(2026, 8, 16, 12, 0, tzinfo=timezone.utc),
         freshness_window_days=7,
     )
 
