@@ -11,7 +11,7 @@ MONTHS_UK = {
 }
 MONTH_PATTERN_UK = "(?:" + "|".join(MONTHS_UK) + ")"
 EVENT_DATETIME_RE = re.compile(
-    rf"(?P<day>\d{{1,2}})\s+(?P<month>{MONTH_PATTERN_UK})"
+    rf"(?P<day>\d{{1,2}}\s+(?P<month>{MONTH_PATTERN_UK}))"
     rf"(?:\s+(?P<year>20\d{{2}}))?"
     rf"(?:\s*(?:,|\||—|-)?\s*(?P<hour>\d{{1,2}}):(?P<minute>\d{{2}}))?",
     re.IGNORECASE,
@@ -88,6 +88,19 @@ def title_variant_match(title_a: str, title_b: str) -> bool:
     if len(short) < 3:
         return False
     return len(short & long) / len(short) >= 0.85
+
+
+def venue_variant_match(venue_a: str, venue_b: str) -> bool:
+    """Match venue name variants when one source uses a longer venue form."""
+    normalized_a = normalize_title(venue_a or "")
+    normalized_b = normalize_title(venue_b or "")
+    if not normalized_a or not normalized_b:
+        return True
+    if normalized_a == normalized_b:
+        return True
+    if normalized_a in normalized_b or normalized_b in normalized_a:
+        return True
+    return SequenceMatcher(None, normalized_a, normalized_b).ratio() >= 0.80
 
 
 def make_group_key(title: str, start_at: datetime | None, venue: str | None) -> str:
