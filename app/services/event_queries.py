@@ -2,6 +2,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -26,6 +27,31 @@ def _match_title(value: str) -> str:
     return normalize_title(title_without_embedded_datetime(value))
 
 
+def _title_tokens(value: str) -> set[str]:
+    return set(re.findall(r"\\w+", _match_title(value), flags=re.UNICODE))
+
+
+def _title_variant_match(a: Event, b: Event) -> bool:
+    """Allow a source to append venue/price/ticket metadata to the same title."""
+    title_a = _match_title(a.title)
+    title_b = _match_title(b.title)
+    if title_a == title_b:
+        # Different group keys with literally identical titles are intentionally
+        # kept separate: the grouping key may represent distinct source events.
+        return a.group_key == b.group_key
+
+    if SequenceMatcher(None, title_a, title_b).ratio() >= 0.90:
+        return True
+
+    short, long = sorted((_title_tokens(a.title), _title_tokens(b.title)), key=len)
+    if len(short) < 3:
+        return False
+    # One source often appends "Тернопіль ... від 600 грн Квитки". If nearly all
+    # meaningful tokens from the shorter title occur in the longer one, treat it
+    # as a source variant, provided venue/time checks below also agree.
+    return len(short & long) / len(short) >= 0.85
+
+
 def _same_occurrence(a: Event, b: Event, time_tolerance_minutes: int = 15) -> bool:
     """Match source variants only when they describe the same occurrence."""
     if a.start_at is None or b.start_at is None:
@@ -33,7 +59,7 @@ def _same_occurrence(a: Event, b: Event, time_tolerance_minutes: int = 15) -> bo
     if abs((_utc(a.start_at) - _utc(b.start_at)).total_seconds()) > time_tolerance_minutes * 60:
         return False
 
-    if SequenceMatcher(None, _match_title(a.title), _match_title(b.title)).ratio() < 0.90:
+    if not _title_variant_match(a, b):
         return False
 
     venue_a = normalize_title(a.venue.name if a.venue else "")
@@ -115,7 +141,6 @@ def canonical_events_for_range(session: Session, start: datetime, end: datetime)
             .where(Event.start_at >= start, Event.start_at < end, Event.status == "active")
             .order_by(Event.start_at, Event.title)
         ).all()
-    )
     return canonicalize_db_events(events)
 
 
@@ -142,7 +167,6 @@ def canonical_events_for_category(
             )
             .order_by(Event.start_at, Event.title)
         ).all()
-    )
     canonical = canonicalize_db_events(events)
     return [
         item
