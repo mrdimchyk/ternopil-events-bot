@@ -2,13 +2,12 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
-import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
-from app.services.event_identity import normalize_title, title_without_embedded_datetime
+from app.services.event_identity import normalize_title, title_variant_match, title_without_embedded_datetime
 
 
 @dataclass(slots=True)
@@ -27,30 +26,6 @@ def _match_title(value: str) -> str:
     return normalize_title(title_without_embedded_datetime(value))
 
 
-def _title_tokens(value: str) -> set[str]:
-    return set(re.findall(r"\w+", _match_title(value), flags=re.UNICODE))
-
-
-def _title_variant_match(a: Event, b: Event) -> bool:
-    """Allow source metadata suffixes without merging unrelated events."""
-    title_a = _match_title(a.title)
-    title_b = _match_title(b.title)
-    if title_a == title_b:
-        # Exact normalized titles at the same time are the same occurrence even
-        # when source-specific group keys differ.
-        return True
-
-    if SequenceMatcher(None, title_a, title_b).ratio() >= 0.90:
-        return True
-
-    short, long = sorted((_title_tokens(a.title), _title_tokens(b.title)), key=len)
-    if len(short) < 3:
-        return False
-    # Source pages commonly append venue/price/ticket metadata. Require nearly
-    # all tokens of the shorter title to occur in the longer variant.
-    return len(short & long) / len(short) >= 0.85
-
-
 def _same_occurrence(a: Event, b: Event, time_tolerance_minutes: int = 15) -> bool:
     """Match source variants only when they describe the same occurrence."""
     if a.start_at is None or b.start_at is None:
@@ -58,7 +33,7 @@ def _same_occurrence(a: Event, b: Event, time_tolerance_minutes: int = 15) -> bo
     if abs((_utc(a.start_at) - _utc(b.start_at)).total_seconds()) > time_tolerance_minutes * 60:
         return False
 
-    if not _title_variant_match(a, b):
+    if not title_variant_match(a.title, b.title):
         return False
 
     venue_a = normalize_title(a.venue.name if a.venue else "")
@@ -91,8 +66,6 @@ def canonicalize_db_events(events: list[Event]) -> list[CanonicalDbEvent]:
         matched = False
         for cluster in clusters:
             representative = cluster[0]
-            # A group_key is strong evidence, but time is authoritative: two
-            # showings of the same production must remain two results.
             if event.group_key == representative.group_key:
                 if event.start_at is None or representative.start_at is None:
                     continue
