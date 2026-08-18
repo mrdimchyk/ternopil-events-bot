@@ -124,22 +124,22 @@ async def _refresh_event_action_buttons(callback: CallbackQuery, *, favorite: bo
     await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
-async def _send_events(message: Message, events: list[CanonicalDbEvent], heading: str) -> None:
+async def _send_events(message: Message, events: list[CanonicalDbEvent], heading: str, user_id: int | None = None) -> None:
+    """Send events with action labels based on the actual Telegram user."""
     if not events:
         await message.answer(f"📅 <b>{heading}</b>\n\nПоки що подій у базі немає.", reply_markup=main_menu())
         return
 
+    viewer_user_id = user_id if user_id is not None else message.from_user.id
     favorite_keys: set[str] = set()
     notification_keys: set[str] = set()
     try:
         with SessionLocal() as session:
-            favorite_keys = favorite_group_keys(session, message.from_user.id)
-            notification_keys = notification_group_keys(session, message.from_user.id)
+            favorite_keys = favorite_group_keys(session, viewer_user_id)
+            notification_keys = notification_group_keys(session, viewer_user_id)
     except Exception:
         pass
 
-    # Telegram attaches one inline keyboard to one message. Therefore every
-    # event is sent as its own message so its buttons stay directly below it.
     await message.answer(f"📅 <b>{heading}</b>")
     displayed = events[:20]
     for item in displayed:
@@ -153,12 +153,12 @@ async def _send_events(message: Message, events: list[CanonicalDbEvent], heading
         await message.answer("Оберіть дію або поверніться до меню:", reply_markup=main_menu())
 
 
-async def _send_day(message: Message, offset: int) -> None:
+async def _send_day(message: Message, offset: int, user_id: int | None = None) -> None:
     label = "сьогодні" if offset == 0 else "завтра"
     start, _ = _day_range(offset)
     with SessionLocal() as session:
         events = canonical_events_for_day(session, start)
-    await _send_events(message, events, f"Що цікавого {label} у Тернополі")
+    await _send_events(message, events, f"Що цікавого {label} у Тернополі", user_id=user_id)
 
 
 def _weekend_range() -> tuple[datetime, datetime]:
@@ -216,7 +216,7 @@ async def search_text(message: Message, state: FSMContext):
 async def day_events(callback: CallbackQuery):
     await callback.answer()
     try:
-        await _send_day(callback.message, 0 if callback.data == "events:today" else 1)
+        await _send_day(callback.message, 0 if callback.data == "events:today" else 1, user_id=callback.from_user.id)
     except Exception as exc:
         await callback.message.answer("⚠️ Не вдалося завантажити події.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
@@ -228,7 +228,7 @@ async def weekend_events(callback: CallbackQuery):
         start, end = _weekend_range()
         with SessionLocal() as session:
             events = canonical_events_for_range(session, start, end)
-        await _send_events(callback.message, events, "Події цими вихідними у Тернополі")
+        await _send_events(callback.message, events, "Події цими вихідними у Тернополі", user_id=callback.from_user.id)
     except Exception as exc:
         await callback.message.answer("⚠️ Не вдалося завантажити вихідні.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
@@ -266,7 +266,7 @@ async def category_events(callback: CallbackQuery):
                 return
             category = counts[index][0]
             events = canonical_events_for_category(session, category, start, end)
-        await _send_events(callback.message, events, f"{category} — найближчі 30 днів")
+        await _send_events(callback.message, events, f"{category} — найближчі 30 днів", user_id=callback.from_user.id)
     except Exception as exc:
         await callback.message.answer("⚠️ Не вдалося завантажити події категорії.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
@@ -325,7 +325,7 @@ async def favorites(callback: CallbackQuery):
     try:
         with SessionLocal() as session:
             events = favorite_events(session, callback.from_user.id, _local_now())
-        await _send_events(callback.message, events, "Моє обране")
+        await _send_events(callback.message, events, "Моє обране", user_id=callback.from_user.id)
     except Exception as exc:
         await callback.message.answer("⚠️ Не вдалося завантажити обране.\n" f"Технічна причина: <code>{type(exc).__name__}: {str(exc)[:220]}</code>", reply_markup=main_menu())
 
