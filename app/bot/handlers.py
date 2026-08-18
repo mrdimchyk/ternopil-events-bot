@@ -16,7 +16,7 @@ router = Router()
 
 
 def _local_now() -> datetime:
-    return datetime.now(ZoneInfo(settings.timezone)).replace(tzinfo=None)
+    return datetime.now(ZoneInfo(settings.timezone))
 
 
 def main_menu() -> InlineKeyboardMarkup:
@@ -34,9 +34,19 @@ def _day_range(offset: int) -> tuple[datetime, datetime]:
     return target, target + timedelta(days=1)
 
 
+def _display_start(start_at: datetime | None) -> str:
+    if start_at is None:
+        return "Час уточнюється"
+    if start_at.tzinfo is None:
+        local = start_at
+    else:
+        local = start_at.astimezone(ZoneInfo(settings.timezone))
+    return local.strftime("%H:%M")
+
+
 def _format_event(item: CanonicalDbEvent) -> str:
     event = item.representative
-    time = event.start_at.strftime("%H:%M") if event.start_at else "Час уточнюється"
+    time = _display_start(event.start_at)
     venue = f"📍 {event.venue.name}" if event.venue else "📍 Тернопіль"
     prices = sorted({source.price_text for source in item.sources if source.price_text})
     price = f"💰 {', '.join(prices)}\n" if prices else ""
