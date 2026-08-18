@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.db.models import Base, Source, SourceRun
+from app.db.models import Base, Event, Source, SourceRun
 from app.services.source_health import source_health_report
 
 
@@ -30,6 +30,7 @@ def add_runs(db, source, counts, statuses=None):
             )
         )
     db.commit()
+    return source
 
 
 def test_healthy_source_uses_recent_baseline():
@@ -71,3 +72,63 @@ def test_latest_error_is_down_and_included_in_overall_status():
     assert report["overall"] == "degraded"
     assert report["sources"]["SourceA"]["status"] == "down"
     assert report["sources"]["SourceA"]["latest_status"] == "error"
+
+
+def test_source_with_events_only_beyond_freshness_window_is_stale():
+    db = session()
+    source = add_runs(db, Source(name="KARABAS", base_url="https://example.com"), [47, 46, 49, 45])
+    db.add(
+        Event(
+            external_id="future-1",
+            group_key="future-1",
+            title="September event",
+            start_at=datetime(2026, 9, 12, 12, 0),
+            source_id=source.id,
+            source_url="https://example.com/event",
+            status="active",
+        )
+    )
+    db.commit()
+
+    report = source_health_report(
+        db,
+        ["KARABAS"],
+        now=datetime(2026, 8, 16, 12, 0),
+        freshness_window_days=7,
+    )
+
+    item = report["sources"]["KARABAS"]
+    assert report["overall"] == "degraded"
+    assert item["status"] == "stale"
+    assert item["freshness_stale"] is True
+    assert item["events_next_7d"] == 0
+    assert item["next_event_at"] == datetime(2026, 9, 12, 12, 0)
+
+
+def test_source_with_near_term_event_is_not_stale():
+    db = session()
+    source = add_runs(db, Source(name="KARABAS", base_url="https://example.com"), [47, 46, 49, 45])
+    db.add(
+        Event(
+            external_id="future-2",
+            group_key="future-2",
+            title="Tomorrow event",
+            start_at=datetime(2026, 8, 18, 18, 0),
+            source_id=source.id,
+            source_url="https://example.com/event",
+            status="active",
+        )
+    )
+    db.commit()
+
+    report = source_health_report(
+        db,
+        ["KARABAS"],
+        now=datetime(2026, 8, 16, 12, 0),
+        freshness_window_days=7,
+    )
+
+    item = report["sources"]["KARABAS"]
+    assert item["status"] == "healthy"
+    assert item["freshness_stale"] is False
+    assert item["events_next_7d"] == 1
