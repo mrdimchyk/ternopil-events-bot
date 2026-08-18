@@ -34,6 +34,7 @@ def _status_for_runs(
     allow_empty: bool,
     events_next_7d: int = 0,
     next_event_at: datetime | None = None,
+    freshness_end: datetime | None = None,
     minimum_runs: int = 3,
 ) -> SourceHealth:
     latest = runs[0] if runs else None
@@ -47,7 +48,8 @@ def _status_for_runs(
         and latest_count
         and events_next_7d == 0
         and next_event_at is not None
-        and next_event_at >= (latest.started_at + timedelta(days=FRESHNESS_WINDOW_DAYS))
+        and freshness_end is not None
+        and next_event_at >= freshness_end
         and not allow_empty
     )
 
@@ -163,6 +165,7 @@ def source_health_report(
             allow_empty=source_name in allow_empty_sources,
             events_next_7d=events_next_7d,
             next_event_at=next_event_at,
+            freshness_end=freshness_end,
         )
         results[source_name] = {
             "status": health.status,
