@@ -74,6 +74,25 @@ def test_latest_error_is_down_and_included_in_overall_status():
     assert report["sources"]["SourceA"]["latest_status"] == "error"
 
 
+def test_source_with_no_future_events_is_not_stale():
+    db = session()
+    add_runs(db, Source(name="KARABAS", base_url="https://example.com"), [47, 46, 49, 45])
+
+    report = source_health_report(
+        db,
+        ["KARABAS"],
+        now=datetime(2026, 8, 16, 12, 0),
+        freshness_window_days=7,
+    )
+
+    item = report["sources"]["KARABAS"]
+    assert report["overall"] == "healthy"
+    assert item["status"] == "healthy"
+    assert item["freshness_stale"] is False
+    assert item["events_next_7d"] == 0
+    assert item["next_event_at"] is None
+
+
 def test_source_with_events_only_beyond_freshness_window_is_quiet():
     db = session()
     source = add_runs(db, Source(name="KARABAS", base_url="https://example.com"), [47, 46, 49, 45])
