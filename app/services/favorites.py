@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event, Favorite
 from app.services.event_queries import CanonicalDbEvent, canonicalize_db_events
+from app.services.user_event_state import related_group_keys
 
 
 def add_favorite(session: Session, user_id: int, group_key: str) -> bool:
@@ -19,19 +20,24 @@ def add_favorite(session: Session, user_id: int, group_key: str) -> bool:
 
 
 def remove_favorite(session: Session, user_id: int, group_key: str) -> bool:
-    favorite = session.scalar(
-        select(Favorite).where(Favorite.user_id == user_id, Favorite.group_key == group_key)
-    )
-    if not favorite:
+    keys = related_group_keys(session, group_key)
+    favorites = session.scalars(
+        select(Favorite).where(Favorite.user_id == user_id, Favorite.group_key.in_(keys))
+    ).all()
+    if not favorites:
         return False
-    session.delete(favorite)
+    for favorite in favorites:
+        session.delete(favorite)
     session.commit()
     return True
 
 
 def favorite_group_keys(session: Session, user_id: int) -> set[str]:
     rows = session.scalars(select(Favorite.group_key).where(Favorite.user_id == user_id)).all()
-    return set(rows)
+    expanded: set[str] = set()
+    for key in rows:
+        expanded.update(related_group_keys(session, key))
+    return expanded
 
 
 def favorite_events(session: Session, user_id: int, now: datetime) -> list[CanonicalDbEvent]:
