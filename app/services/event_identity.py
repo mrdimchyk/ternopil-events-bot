@@ -2,6 +2,7 @@ import hashlib
 import re
 import unicodedata
 from datetime import datetime
+from difflib import SequenceMatcher
 
 MONTHS_UK = {
     "січня": 1,
@@ -47,8 +48,6 @@ def extract_datetime_from_text(text: str, *, default_year: int | None = None) ->
         hour = int(values["hour"] or 0)
         minute = int(values["minute"] or 0)
         value = datetime(year, MONTHS_UK[values["month"].lower()], int(values["day"]), hour, minute)
-        # When a source omits the year, interpret a date that already passed
-        # as the next occurrence rather than creating an immediately stale event.
         if not explicit_year and value < datetime.now():
             value = value.replace(year=value.year + 1)
         return value
@@ -65,8 +64,25 @@ def title_without_embedded_datetime(title: str) -> str:
     return cleaned.strip(" -—|,:") or (title or "")
 
 
+def title_variant_match(title_a: str, title_b: str) -> bool:
+    """Match source title variants while rejecting unrelated short titles."""
+    normalized_a = normalize_title(title_without_embedded_datetime(title_a))
+    normalized_b = normalize_title(title_without_embedded_datetime(title_b))
+    if normalized_a == normalized_b:
+        return True
+    if SequenceMatcher(None, normalized_a, normalized_b).ratio() >= 0.90:
+        return True
+
+    tokens_a = set(re.findall(r"\w+", normalized_a, flags=re.UNICODE))
+    tokens_b = set(re.findall(r"\w+", normalized_b, flags=re.UNICODE))
+    short, long = sorted((tokens_a, tokens_b), key=len)
+    if len(short) < 3:
+        return False
+    return len(short & long) / len(short) >= 0.85
+
+
 def make_group_key(title: str, start_at: datetime | None, venue: str | None) -> str:
     date_part = start_at.strftime("%Y-%m-%d-%H-%M") if start_at else "unknown-time"
     venue_part = normalize_title(venue or "")
-    raw = f"{normalize_title(title)}|{date_part}|{venue_part}"
+    raw = f"{normalize_title(title_without_embedded_datetime(title))}|{date_part}|{venue_part}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
