@@ -3,7 +3,8 @@ name: Deliver due Telegram notifications
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    # Check every 15 minutes to reduce GitHub Actions usage while keeping reminders reasonably timely.
+    - cron: "*/15 * * * *"
 
 jobs:
   deliver:
