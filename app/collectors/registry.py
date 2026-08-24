@@ -6,10 +6,10 @@ PRODUCTION_COLLECTORS = [
     (karabas.SOURCE_NAME, karabas.BASE_URL, karabas.collect),
     (numotamo.SOURCE_NAME, numotamo.BASE_URL, numotamo.collect),
     (concert_ua.SOURCE_NAME, concert_ua.BASE_URL, concert_ua.collect),
+    (teatr_org_ua.SOURCE_NAME, teatr_org_ua.BASE_URL, teatr_org_ua.collect),
 ]
 
 OPTIONAL_COLLECTORS = [
-    (teatr_org_ua.SOURCE_NAME, teatr_org_ua.BASE_URL, teatr_org_ua.collect),
     (ticketsbox.SOURCE_NAME, ticketsbox.BASE_URL, ticketsbox.collect),
     (ticket_kiev.SOURCE_NAME, ticket_kiev.BASE_URL, ticket_kiev.collect),
 ]
