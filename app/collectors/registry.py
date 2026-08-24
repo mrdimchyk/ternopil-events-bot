@@ -1,11 +1,10 @@
 from app.collectors import concert_ua, numotamo, teatr_org_ua, ticket_kiev, ticketsbox
 from app.collectors import karabas
 
-# Production MVP deliberately runs only the verified KARABAS collector.
-# Additional adapters stay registered as optional work and are not allowed to
-# block the production loop until deployment/DB/Telegram/digest is proven end-to-end.
+# Production collectors have passed source-access, parser, ingest and quality checks.
 PRODUCTION_COLLECTORS = [
     (karabas.SOURCE_NAME, karabas.BASE_URL, karabas.collect),
+    (concert_ua.SOURCE_NAME, concert_ua.BASE_URL, concert_ua.collect),
 ]
 
 OPTIONAL_COLLECTORS = [
@@ -13,7 +12,6 @@ OPTIONAL_COLLECTORS = [
     (teatr_org_ua.SOURCE_NAME, teatr_org_ua.BASE_URL, teatr_org_ua.collect),
     (ticketsbox.SOURCE_NAME, ticketsbox.BASE_URL, ticketsbox.collect),
     (ticket_kiev.SOURCE_NAME, ticket_kiev.BASE_URL, ticket_kiev.collect),
-    (concert_ua.SOURCE_NAME, concert_ua.BASE_URL, concert_ua.collect),
 ]
 
 COLLECTORS = PRODUCTION_COLLECTORS
