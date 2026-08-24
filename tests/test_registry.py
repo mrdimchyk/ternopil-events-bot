@@ -1,9 +1,9 @@
 from app.collectors.registry import COLLECTORS, OPTIONAL_COLLECTORS, PRODUCTION_COLLECTORS, validate_collectors
 
 
-def test_production_registry_contains_only_verified_mvp_collector():
+def test_production_registry_contains_verified_collectors():
     assert COLLECTORS == PRODUCTION_COLLECTORS
-    assert [name for name, _, _ in COLLECTORS] == ["KARABAS"]
+    assert [name for name, _, _ in COLLECTORS] == ["KARABAS", "Numotamo"]
 
 
 def test_optional_registry_keeps_unverified_adapters_out_of_production():
