@@ -27,6 +27,7 @@ def collect_jsonld(
     url: str,
     source_name: str | None = None,
     timeout: float = 20.0,
+    headers: dict[str, str] | None = None,
 ) -> list[RawEvent]:
     """Collect Schema.org Event data from a source page.
 
@@ -34,9 +35,12 @@ def collect_jsonld(
     inside @graph, itemListElement, item, and other JSON-LD containers.
     """
     _ = source_name
+    request_headers = {"User-Agent": "TernopilEventsBot/0.1"}
+    if headers:
+        request_headers.update(headers)
     response = httpx.get(
         url,
-        headers={"User-Agent": "TernopilEventsBot/0.1"},
+        headers=request_headers,
         timeout=timeout,
         follow_redirects=True,
     )
