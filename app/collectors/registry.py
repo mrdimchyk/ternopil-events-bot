@@ -1,4 +1,4 @@
-from app.collectors import concert_ua, murava, numotamo, teatr_org_ua, ticket_kiev, ticketsbox
+from app.collectors import concert_ua, murava, numotamo, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox
 from app.collectors import karabas
 
 # Production collectors have passed source-access, parser, ingest and quality checks.
@@ -13,6 +13,7 @@ OPTIONAL_COLLECTORS = [
     (murava.SOURCE_NAME, murava.BASE_URL, murava.collect),
     (ticketsbox.SOURCE_NAME, ticketsbox.BASE_URL, ticketsbox.collect),
     (ticket_kiev.SOURCE_NAME, ticket_kiev.BASE_URL, ticket_kiev.collect),
+    (ticket_dp.SOURCE_NAME, ticket_dp.BASE_URL, ticket_dp.collect),
 ]
 
 COLLECTORS = PRODUCTION_COLLECTORS
