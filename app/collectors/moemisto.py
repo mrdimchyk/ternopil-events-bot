@@ -31,10 +31,12 @@ _PRICE_RE = re.compile(r"(?:від\s*)?\d[\d\s]*(?:[.,]\d+)?\s*(?:₴|грн)", 
 _GENERIC = {"купити квиток", "купити", "детальніше", "всі", "читати далі"}
 
 
+def _date_match(text: str) -> re.Match[str] | None:
+    return _DATE_RE.search(text) or _RANGE_RE.search(text)
+
+
 def _parse_start(text: str, now: datetime) -> datetime | None:
-    match = _DATE_RE.search(text)
-    if not match:
-        match = _RANGE_RE.search(text)
+    match = _date_match(text)
     if not match:
         return None
     g = match.groupdict()
@@ -66,6 +68,17 @@ def _title(anchor: Tag, block: Tag) -> str | None:
     return None
 
 
+def _venue(text: str, title: str) -> str | None:
+    match = _date_match(text)
+    if not match:
+        return None
+    prefix = text[:match.start()].strip(" ,|•—–")
+    if title:
+        prefix = prefix.replace(title, "", 1).strip(" ,|•—–")
+    prefix = re.sub(r"\bТернополі?\b", "", prefix, flags=re.I).strip(" ,|•—–")
+    return prefix or None
+
+
 def collect(timeout: float = 20.0) -> list[RawEvent]:
     response = httpx.get(
         BASE_URL,
@@ -93,7 +106,7 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
             if not isinstance(block, Tag):
                 break
             text = " ".join(block.stripped_strings)
-            if "тернопіль" in text.lower() and _RANGE_RE.search(text) and 30 <= len(text) <= 2200:
+            if "тернопіль" in text.lower() and _date_match(text) and 30 <= len(text) <= 2200:
                 selected = block
                 break
             block = block.parent
@@ -107,19 +120,13 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
         seen.add(href)
         price = _PRICE_RE.search(text)
         low = text.lower()
-        venue = None
-        marker = "тернопіль"
-        idx = low.find(marker)
-        if idx >= 0:
-            tail = text[idx + len(marker):].strip(" ,|•—–")
-            venue = re.split(r"\s+(?:дата|квитки|купити|від)\b", tail, maxsplit=1, flags=re.I)[0].strip() or None
         result.append(
             RawEvent(
                 external_id=_id(href, title, start_at),
                 title=title,
                 category=_category(text),
                 start_at=start_at,
-                venue=venue,
+                venue=_venue(text, title),
                 address=None,
                 price_text=price.group(0).strip() if price else None,
                 ticket_url=href if "квит" in low or "купити" in low else None,
