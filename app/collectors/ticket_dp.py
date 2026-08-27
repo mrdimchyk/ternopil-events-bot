@@ -49,7 +49,10 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
         match = date_re.search(text)
         if not match:
             continue
-        start_at = _parse_datetime(text, now=datetime.now())
+        # generic_html expects the time without surrounding parentheses;
+        # Ticket.dp.ua's live cards publish it as "DD month YYYY (HH:MM)".
+        parse_text = re.sub(r"\((\d{1,2}:\d{2})\)", r"\1", text)
+        start_at = _parse_datetime(parse_text, now=datetime.now())
         if not start_at or href in seen_urls:
             continue
         title = text[:match.start()].strip(" —–|•")
