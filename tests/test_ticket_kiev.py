@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.collectors import ticket_kiev
+from app.collectors import generic_html, ticket_kiev
 
 
 LIVE_CARD_HTML = '''
@@ -27,7 +27,7 @@ def test_ticket_kiev_parses_observed_event_card_structure(monkeypatch):
         calls.update(url=url, **kwargs)
         return SimpleNamespace(text=LIVE_CARD_HTML, raise_for_status=lambda: None)
 
-    monkeypatch.setattr(ticket_kiev.httpx, "get", fake_get)
+    monkeypatch.setattr(generic_html.httpx, "get", fake_get)
 
     result = ticket_kiev.collect(timeout=7.5)
 
@@ -36,7 +36,7 @@ def test_ticket_kiev_parses_observed_event_card_structure(monkeypatch):
     assert event.title == "CHEEV"
     assert event.start_at.isoformat() == "2026-10-25T19:00:00"
     assert event.venue == 'Палац культури "Березіль" ім. Леся Курбаса'
-    assert event.price_text == "350₴"
+    assert event.price_text == "від 350₴"
     assert event.ticket_url.endswith("/cheev-ternopil/")
     assert calls["url"] == ticket_kiev.BASE_URL
     assert calls["timeout"] == 7.5
