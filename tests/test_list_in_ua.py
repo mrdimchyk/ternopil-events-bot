@@ -10,7 +10,7 @@ LIVE_CARD_HTML = '''
       Mindgame. Гра про Україну
     </a>
     <div>25.08.2026 19:00 300 грн</div>
-    <div>Ресторан "Оскар"</div>
+    <a href="/Тернопіль/company/999-restaurant-oskar">Ресторан "Оскар"</a>
   </div>
 </body></html>
 '''
