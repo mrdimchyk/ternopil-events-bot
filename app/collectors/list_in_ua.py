@@ -84,8 +84,8 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
         if not title or title.lower() in _GENERIC_TEXT:
             continue
 
-        price_match = _PRICE_RE.search(text)
-        price_text = price_match.group(0).strip() if price_match else None
+        price_matches = list(_PRICE_RE.finditer(text))
+        price_text = price_matches[-1].group(0).strip() if price_matches else None
         venue = None
         for candidate in selected.select("a[href]"):
             candidate_href = urljoin(BASE_URL, candidate.get("href", ""))
