@@ -18,7 +18,7 @@ LIVE_CARD_HTML = '''
 
 def test_list_in_ua_contract_points_to_upcoming_ternopil_catalog():
     assert list_in_ua.SOURCE_NAME == "List.in.ua"
-    assert list_in_ua.BASE_URL.endswith("/Тернопіль/afisha/soon")
+    assert list_in_ua.BASE_URL.endswith("%D0%A2%D0%B5%D1%80%D0%BD%D0%BE%D0%BF%D1%96%D0%BB%D1%8C/afisha/soon")
 
 
 def test_list_in_ua_parses_observed_event_card_structure(monkeypatch):
