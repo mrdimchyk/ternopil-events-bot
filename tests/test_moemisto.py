@@ -36,10 +36,11 @@ def test_moemisto_parses_observed_event_card_contract(monkeypatch):
     assert len(result) == 2
     assert result[0].title == "АНТИТІЛА у Тернополі"
     assert result[0].start_at.isoformat() == "2026-11-21T19:00:00"
-    assert result[0].venue == 'Концерт'
+    assert result[0].venue == 'Палац культури "Березіль"'
     assert result[0].price_text == "від 490 грн"
     assert result[1].title == 'Магічний "Парк Легенд" у Тернополі'
     assert result[1].start_at.isoformat() == "2026-08-27T00:00:00"
+    assert result[1].venue == "Парк ім. Т.Г.Шевченка"
     assert result[1].price_text == "від 100 грн"
     assert calls["url"] == moemisto.BASE_URL
     assert calls["timeout"] == 7.5
