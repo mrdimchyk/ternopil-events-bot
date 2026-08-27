@@ -18,6 +18,7 @@ _DATE_RE = re.compile(
     re.I,
 )
 _PRICE_RE = re.compile(r"(?:від\s*)?\d[\d\s]*(?:[.,]\d+)?\s*(?:₴|грн)", re.I)
+_GENERIC_TEXT = {"купити квиток", "купити", "детальніше", "читати далі", "показати більше"}
 
 
 def _id(url: str, title: str, start_at: datetime | None) -> str:
@@ -66,31 +67,43 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
         match = _DATE_RE.search(text)
         if not match:
             continue
-        start_at = _parse_datetime(text, now=now)
+        parse_text = text
+        if not re.search(r"\b\d{1,2}[./-]\d{1,2}[./-]20\d{2}\s+\d{1,2}:\d{2}\b", match.group(0)):
+            parse_text = f"{match.group(0)} 00:00"
+        start_at = _parse_datetime(parse_text, now=now)
         if not start_at or href in seen_urls:
             continue
 
         title = anchor_text
-        if not title or title.lower() in {"купити квиток", "купити", "детальніше", "читати далі"}:
+        if not title or title.lower() in _GENERIC_TEXT:
             for tag in selected.select("h1, h2, h3, h4, h5, [class*='title'], [class*='name']"):
                 candidate = " ".join(tag.stripped_strings).strip()
-                if candidate and candidate.lower() not in {"купити квиток", "купити"}:
+                if candidate and candidate.lower() not in _GENERIC_TEXT:
                     title = candidate
                     break
-        if not title:
+        if not title or title.lower() in _GENERIC_TEXT:
             continue
 
         price_match = _PRICE_RE.search(text)
         price_text = price_match.group(0).strip() if price_match else None
-        low = text.lower()
         venue = None
-        for marker in ("тернопіль", "місце проведення:"):
-            idx = low.find(marker)
-            if idx >= 0:
-                tail = text[idx + len(marker):].strip(" :,-|•—–")
-                venue = re.split(r"\s+(?:вхід|початок|вартість|квитки|для того|зацікавила)\b", tail, maxsplit=1, flags=re.I)[0].strip()
-                if venue:
-                    break
+        for candidate in selected.select("a[href]"):
+            candidate_href = urljoin(BASE_URL, candidate.get("href", ""))
+            candidate_text = " ".join(candidate.stripped_strings).strip()
+            if candidate_href == href or not candidate_text or candidate_text.lower() in _GENERIC_TEXT:
+                continue
+            if "/afisha/" not in candidate_href:
+                venue = candidate_text
+                break
+        if venue is None:
+            low = text.lower()
+            for marker in ("місце проведення:", "тернопіль"):
+                idx = low.find(marker)
+                if idx >= 0:
+                    tail = text[idx + len(marker):].strip(" :,-|•—–")
+                    venue = re.split(r"\s+(?:вхід|початок|вартість|квитки|для того|зацікавила)\b", tail, maxsplit=1, flags=re.I)[0].strip()
+                    if venue:
+                        break
 
         result.append(
             RawEvent(
