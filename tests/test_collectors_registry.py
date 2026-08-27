@@ -3,5 +3,13 @@ from app.collectors.registry import COLLECTORS, OPTIONAL_COLLECTORS, PRODUCTION_
 
 def test_production_registry_contains_verified_collectors():
     assert COLLECTORS == PRODUCTION_COLLECTORS
-    assert [source for source, _, _ in COLLECTORS] == ["KARABAS", "Numotamo", "Concert.ua", "Teatr.org.ua", "Ticket.dp.ua", "MURAVA"]
+    assert [source for source, _, _ in COLLECTORS] == [
+        "KARABAS",
+        "Numotamo",
+        "Concert.ua",
+        "Teatr.org.ua",
+        "Ticket.dp.ua",
+        "MURAVA",
+        "Ticket.kiev.ua",
+    ]
     assert OPTIONAL_COLLECTORS
