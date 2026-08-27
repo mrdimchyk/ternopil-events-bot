@@ -32,7 +32,7 @@ _GENERIC = {"купити квиток", "купити", "детальніше",
 
 
 def _date_match(text: str) -> re.Match[str] | None:
-    return _DATE_RE.search(text) or _RANGE_RE.search(text)
+    return _RANGE_RE.search(text) or _DATE_RE.search(text)
 
 
 def _parse_start(text: str, now: datetime) -> datetime | None:
@@ -45,8 +45,15 @@ def _parse_start(text: str, now: datetime) -> datetime | None:
     year = int(g["year"] or now.year)
     hour = int(g.get("hour") or 0)
     minute = int(g.get("minute") or 0)
-    if g.get("year") is None and datetime(year, month, day, hour, minute) < now.replace(hour=0, minute=0, second=0, microsecond=0):
-        year += 1
+    candidate = datetime(year, month, day, hour, minute)
+    if g.get("year") is None and candidate < now.replace(hour=0, minute=0, second=0, microsecond=0):
+        end_day = int(g["end"]) if g.get("end") else day
+        try:
+            end_candidate = datetime(year, month, end_day, 23, 59)
+        except ValueError:
+            end_candidate = candidate
+        if not g.get("end") or end_candidate < now:
+            year += 1
     try:
         return datetime(year, month, day, hour, minute)
     except ValueError:
