@@ -58,18 +58,13 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
             continue
 
         text = " ".join(selected.stripped_strings)
-        # The official card currently publishes a date without a time and may
-        # include a weekday token such as "ПТ" between the date and ticket link.
+        date_match = date_re.search(text)
+        if not date_match:
+            continue
         if re.search(r"\b\d{1,2}:\d{2}\b", text):
             parse_text = text
         else:
-            parse_text = re.sub(
-                r"(\b\d{4}\b)\s+(?:ПН|ВТ|СР|ЧТ|ПТ|СБ|НД)\b",
-                r"\1",
-                text,
-                flags=re.I,
-            )
-            parse_text = f"{parse_text} 00:00"
+            parse_text = f"{date_match.group(0)} 00:00"
         start_at = _parse_datetime(parse_text, now=datetime.now())
         if not start_at:
             continue
