@@ -12,5 +12,6 @@ def test_production_registry_contains_verified_collectors():
         "MURAVA",
         "Ticket.kiev.ua",
         "List.in.ua",
+        "moemisto.ua",
     ]
     assert OPTIONAL_COLLECTORS
