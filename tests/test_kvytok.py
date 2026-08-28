@@ -42,6 +42,6 @@ def test_kvytok_parses_observed_event_card_contract(monkeypatch):
     assert result[0].ticket_url.endswith("/breshuemo-chistu-pravdu-ternopil/")
     assert result[1].title == "WellBoy"
     assert result[1].start_at.isoformat() == "2026-09-18T18:00:00"
-    assert result[1].venue == "Сoncert Hall PODOLYANY"
+    assert result[1].venue == "Сонcert Hall PODOLYANY"
     assert calls["url"] == kvytok.BASE_URL
     assert calls["timeout"] == 7.5
