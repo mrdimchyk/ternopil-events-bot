@@ -1,4 +1,4 @@
-from app.collectors import concert_ua, kvytok, list_in_ua, moemisto, murava, numotamo, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox
+from app.collectors import concert_ua, ixyt, kvytok, list_in_ua, moemisto, murava, numotamo, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox
 from app.collectors import karabas
 
 # Production collectors have passed source-access, parser, ingest and quality checks.
@@ -17,6 +17,7 @@ PRODUCTION_COLLECTORS = [
 
 OPTIONAL_COLLECTORS = [
     (ticketsbox.SOURCE_NAME, ticketsbox.BASE_URL, ticketsbox.collect),
+    (ixyt.SOURCE_NAME, ixyt.BASE_URL, ixyt.collect),
 ]
 
 COLLECTORS = PRODUCTION_COLLECTORS
