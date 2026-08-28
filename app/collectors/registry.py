@@ -12,11 +12,11 @@ PRODUCTION_COLLECTORS = [
     (ticket_kiev.SOURCE_NAME, ticket_kiev.BASE_URL, ticket_kiev.collect),
     (list_in_ua.SOURCE_NAME, list_in_ua.BASE_URL, list_in_ua.collect),
     (moemisto.SOURCE_NAME, moemisto.BASE_URL, moemisto.collect),
+    (kvytok.SOURCE_NAME, kvytok.BASE_URL, kvytok.collect),
 ]
 
 OPTIONAL_COLLECTORS = [
     (ticketsbox.SOURCE_NAME, ticketsbox.BASE_URL, ticketsbox.collect),
-    (kvytok.SOURCE_NAME, kvytok.BASE_URL, kvytok.collect),
 ]
 
 COLLECTORS = PRODUCTION_COLLECTORS
