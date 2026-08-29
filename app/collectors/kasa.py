@@ -49,9 +49,16 @@ def _event_card(anchor: Tag) -> Tag | None:
     return None
 
 
-def _venue_from_card(text: str) -> str | None:
-    match = re.search(r"Тернопіль,\s*(.+?)(?=\s+(?:Понеділок|Вівторок|Середа|Четвер|П'ятниця|Субота|Неділя)\b)", text)
-    return match.group(1).strip(" |—–•") if match else None
+def _venue_from_card(card: Tag) -> str | None:
+    parts = list(card.stripped_strings)
+    for index, part in enumerate(parts):
+        if _DATE_RE.search(part):
+            candidates = [value.strip() for value in parts[:index] if value.strip()]
+            for candidate in reversed(candidates):
+                if candidate.lower() not in _GENERIC and not candidate.startswith("«"):
+                    return candidate.strip(" |—–•") or None
+            break
+    return None
 
 
 def _parse_venue_page(html: str, page_url: str, now: datetime) -> list[RawEvent]:
@@ -60,7 +67,9 @@ def _parse_venue_page(html: str, page_url: str, now: datetime) -> list[RawEvent]
     seen: set[str] = set()
 
     for anchor in soup.select("a[href]"):
-        title = " ".join(anchor.stripped_strings).strip("«» \t\n")
+        title = " ".join(anchor.stripped_strings).strip()
+        if title.startswith("«") and title.endswith("»"):
+            title = title[1:-1].strip()
         if not title or title.lower() in _GENERIC:
             continue
         card = _event_card(anchor)
@@ -84,7 +93,7 @@ def _parse_venue_page(html: str, page_url: str, now: datetime) -> list[RawEvent]
                 title=title,
                 category="Квиток/афіша",
                 start_at=start_at,
-                venue=_venue_from_card(text),
+                venue=_venue_from_card(card),
                 address=None,
                 price_text=(price_match.group(0).strip() if price_match else None),
                 ticket_url=source_url,

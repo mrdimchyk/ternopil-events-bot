@@ -14,6 +14,7 @@ PRODUCTION_COLLECTORS = [
     (moemisto.SOURCE_NAME, moemisto.BASE_URL, moemisto.collect),
     (kvytok.SOURCE_NAME, kvytok.BASE_URL, kvytok.collect),
     (ternopilcity.SOURCE_NAME, ternopilcity.BASE_URL, ternopilcity.collect),
+    (kasa.SOURCE_NAME, kasa.BASE_URL, kasa.collect),
 ]
 
 OPTIONAL_COLLECTORS = [
@@ -21,7 +22,6 @@ OPTIONAL_COLLECTORS = [
     (ixyt.SOURCE_NAME, ixyt.BASE_URL, ixyt.collect),
     (ua_0352.SOURCE_NAME, ua_0352.BASE_URL, ua_0352.collect),
     (internet_bilet.SOURCE_NAME, internet_bilet.BASE_URL, internet_bilet.collect),
-    (kasa.SOURCE_NAME, kasa.BASE_URL, kasa.collect),
     (pulselive.SOURCE_NAME, pulselive.BASE_URL, pulselive.collect),
 ]
 

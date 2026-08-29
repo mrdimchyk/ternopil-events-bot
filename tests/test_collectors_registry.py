@@ -15,5 +15,6 @@ def test_production_registry_contains_verified_collectors():
         "moemisto.ua",
         "Kvytok",
         "Ternopil City Council",
+        "KASA.com.ua",
     ]
     assert OPTIONAL_COLLECTORS
