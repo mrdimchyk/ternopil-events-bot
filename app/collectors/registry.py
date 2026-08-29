@@ -1,4 +1,4 @@
-from app.collectors import concert_ua, internet_bilet, ixyt, kvytok, list_in_ua, moemisto, murava, numotamo, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox, ternopilcity, ua_0352
+from app.collectors import concert_ua, internet_bilet, ixyt, kasa, kvytok, list_in_ua, moemisto, murava, numotamo, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox, ternopilcity, ua_0352
 from app.collectors import karabas
 
 # Production collectors have passed source-access, parser, ingest and quality checks.
@@ -21,6 +21,7 @@ OPTIONAL_COLLECTORS = [
     (ua_0352.SOURCE_NAME, ua_0352.BASE_URL, ua_0352.collect),
     (ternopilcity.SOURCE_NAME, ternopilcity.BASE_URL, ternopilcity.collect),
     (internet_bilet.SOURCE_NAME, internet_bilet.BASE_URL, internet_bilet.collect),
+    (kasa.SOURCE_NAME, kasa.BASE_URL, kasa.collect),
 ]
 
 COLLECTORS = PRODUCTION_COLLECTORS
