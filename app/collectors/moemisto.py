@@ -86,7 +86,7 @@ def _venue(text: str, title: str) -> str | None:
     return prefix or None
 
 
-def collect(timeout: float = 20.0) -> list[RawEvent]:
+def collect(timeout: float = 20.0, now: datetime | None = None) -> list[RawEvent]:
     response = httpx.get(
         BASE_URL,
         headers={
@@ -99,7 +99,7 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
     )
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "lxml")
-    now = datetime.now()
+    current_time = now or datetime.now()
     result: list[RawEvent] = []
     seen: set[str] = set()
 
@@ -120,9 +120,9 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
         if selected is None:
             continue
         text = " ".join(selected.stripped_strings)
-        start_at = _parse_start(text, now)
+        start_at = _parse_start(text, current_time)
         title = _title(anchor, selected)
-        if not start_at or not title or href in seen:
+        if not start_at or not title or start_at < current_time or href in seen:
             continue
         seen.add(href)
         price = _PRICE_RE.search(text)
