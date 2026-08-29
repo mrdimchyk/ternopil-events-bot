@@ -7,10 +7,24 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from app.collectors.base import RawEvent
-from app.collectors.generic_html import _category, _parse_datetime
+from app.collectors.generic_html import _category
 
 BASE_URL = "https://pulselive.com.ua/kontserty"
 SOURCE_NAME = "Pulse Live"
+_MONTHS = {
+    "січня": 1,
+    "лютого": 2,
+    "березня": 3,
+    "квітня": 4,
+    "травня": 5,
+    "червня": 6,
+    "липня": 7,
+    "серпня": 8,
+    "вересня": 9,
+    "жовтня": 10,
+    "листопада": 11,
+    "грудня": 12,
+}
 _DATE_TEXT_RE = re.compile(
     r"(?P<day>\d{1,2})\s+(?P<month>січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s+(?P<year>20\d{2})\s*[·•]\s*(?P<hour>\d{1,2}):(?P<minute>\d{2})",
     re.I,
@@ -43,6 +57,23 @@ def _title(block: Tag, anchor: Tag) -> str | None:
     return text or None
 
 
+def _parse_datetime(text: str) -> datetime | None:
+    match = _DATE_TEXT_RE.search(text)
+    if not match:
+        return None
+    groups = match.groupdict()
+    try:
+        return datetime(
+            int(groups["year"]),
+            _MONTHS[groups["month"].lower()],
+            int(groups["day"]),
+            int(groups["hour"]),
+            int(groups["minute"]),
+        )
+    except (KeyError, ValueError):
+        return None
+
+
 def _parse(html: str, page_url: str, now: datetime) -> list[RawEvent]:
     soup = BeautifulSoup(html, "lxml")
     result: list[RawEvent] = []
@@ -53,7 +84,7 @@ def _parse(html: str, page_url: str, now: datetime) -> list[RawEvent]:
         if block is None:
             continue
         text = " ".join(block.stripped_strings)
-        start_at = _parse_datetime(text, now=now)
+        start_at = _parse_datetime(text)
         if not start_at or start_at < now or "Тернопіль" not in text:
             continue
         href = anchor.get("href")
