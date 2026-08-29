@@ -1,3 +1,4 @@
+from datetime import datetime
 from types import SimpleNamespace
 
 from app.collectors import moemisto
@@ -22,7 +23,7 @@ def test_moemisto_contract_points_to_ternopil_catalog():
     assert moemisto.BASE_URL == "https://moemisto.ua/te"
 
 
-def test_moemisto_parses_observed_event_card_contract(monkeypatch):
+def test_moemisto_parses_observed_event_card_contract_and_filters_past(monkeypatch):
     calls = {}
 
     def fake_get(url, **kwargs):
@@ -31,16 +32,16 @@ def test_moemisto_parses_observed_event_card_contract(monkeypatch):
 
     monkeypatch.setattr(moemisto.httpx, "get", fake_get)
 
-    result = moemisto.collect(timeout=7.5)
+    result = moemisto.collect(timeout=7.5, now=datetime(2026, 8, 29, 10, 0))
 
-    assert len(result) == 2
+    assert len(result) == 1
     assert result[0].title == "АНТИТІЛА у Тернополі"
     assert result[0].start_at.isoformat() == "2026-11-21T19:00:00"
     assert result[0].venue == 'Палац культури "Березіль"'
     assert result[0].price_text == "від 490 грн"
-    assert result[1].title == 'Магічний "Парк Легенд" у Тернополі'
-    assert result[1].start_at.isoformat() == "2026-08-27T00:00:00"
-    assert result[1].venue == "Парк ім. Т.Г.Шевченка"
-    assert result[1].price_text == "від 100 грн"
     assert calls["url"] == moemisto.BASE_URL
     assert calls["timeout"] == 7.5
+
+
+def test_moemisto_preserves_future_multi_day_event_start():
+    assert moemisto._parse_start("27 - 31 серпня", datetime(2026, 8, 20)).isoformat() == "2026-08-27T00:00:00"
