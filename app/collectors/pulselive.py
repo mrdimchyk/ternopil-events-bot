@@ -37,21 +37,16 @@ def _id(url: str, start_at: datetime) -> str:
 
 
 def _event_block(anchor: Tag) -> Tag | None:
-    block: Tag | None = anchor
-    for _ in range(6):
-        if not isinstance(block, Tag) or block.name in {"body", "html"}:
-            return None
-        text = " ".join(block.stripped_strings)
-        if "Тернопіль" in text and _DATE_TEXT_RE.search(text):
-            return block
-        block = block.parent
+    text = " ".join(anchor.stripped_strings)
+    if "Тернопіль" in text and _DATE_TEXT_RE.search(text):
+        return anchor
     return None
 
 
 def _title(block: Tag, anchor: Tag) -> str | None:
     for tag in block.select("h2, h3, h4"):
         text = " ".join(tag.stripped_strings).strip()
-        if text and "WELLBOY" in text.upper():
+        if text:
             return text
     text = " ".join(anchor.stripped_strings).strip()
     return text or None
