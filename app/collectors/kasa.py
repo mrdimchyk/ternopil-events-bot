@@ -60,7 +60,9 @@ def _parse_venue_page(html: str, page_url: str, now: datetime) -> list[RawEvent]
     seen: set[str] = set()
 
     for anchor in soup.select("a[href]"):
-        title = " ".join(anchor.stripped_strings).strip("«» \t\n")
+        title = " ".join(anchor.stripped_strings).strip()
+        if title.startswith("«") and title.endswith("»"):
+            title = title[1:-1].strip()
         if not title or title.lower() in _GENERIC:
             continue
         card = _event_card(anchor)
