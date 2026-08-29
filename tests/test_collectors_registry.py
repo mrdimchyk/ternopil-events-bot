@@ -14,5 +14,6 @@ def test_production_registry_contains_verified_collectors():
         "List.in.ua",
         "moemisto.ua",
         "Kvytok",
+        "Ternopil City Council",
     ]
     assert OPTIONAL_COLLECTORS
