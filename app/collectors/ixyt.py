@@ -13,7 +13,8 @@ SOURCE_NAME = "iXYt.info"
 BASE_URL = "https://ixyt.info/ua/Ukraine/Ternopil"
 
 _DATE_RE = re.compile(
-    r"(?P<day>\d{1,2})\.(?P<month>\d{1,2})(?:\.(?P<year>20\d{2}))?"
+    r"(?:(?P<year>20\d{2})\.(?P<month>\d{1,2})\.(?P<day>\d{1,2})|"
+    r"(?P<day_dmy>\d{1,2})\.(?P<month_dmy>\d{1,2})(?:\.(?P<year_dmy>20\d{2}))?)"
     r"(?:,?\s*(?P<hour>\d{1,2}):(?P<minute>\d{2}))?"
 )
 _GENERIC = {"more", "детальніше", "квитки", "tickets"}
@@ -24,15 +25,17 @@ def _parse_start(text: str, now: datetime) -> datetime | None:
     if not match:
         return None
     group = match.groupdict()
-    year = int(group["year"] or now.year)
+    year = int(group["year"] or group["year_dmy"] or now.year)
+    month = int(group["month"] or group["month_dmy"])
+    day = int(group["day"] or group["day_dmy"])
     candidate = datetime(
         year,
-        int(group["month"]),
-        int(group["day"]),
+        month,
+        day,
         int(group["hour"] or 0),
         int(group["minute"] or 0),
     )
-    if group["year"] is None and candidate < now.replace(hour=0, minute=0, second=0, microsecond=0):
+    if not group["year"] and not group["year_dmy"] and candidate < now.replace(hour=0, minute=0, second=0, microsecond=0):
         candidate = candidate.replace(year=year + 1)
     return candidate
 
