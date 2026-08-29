@@ -59,7 +59,7 @@ def test_kasa_parses_observed_current_venue_contract_and_filters_past_events():
 
     assert len(events) == 1
     event = events[0]
-    assert event.title == "Мюзикл «Панна Францішка"
+    assert event.title == "Мюзикл «Панна Францішка»"
     assert event.start_at == datetime(2026, 8, 30, 17, 0)
     assert event.venue == "Тернопільська обласна філармонія"
     assert event.price_text == "Ціна від 200 грн"
