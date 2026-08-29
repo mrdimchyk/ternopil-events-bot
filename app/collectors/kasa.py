@@ -40,7 +40,7 @@ def _id(url: str, start_at: datetime) -> str:
 def _event_card(anchor: Tag) -> Tag | None:
     block: Tag | None = anchor
     for _ in range(5):
-        if not isinstance(block, Tag):
+        if not isinstance(block, Tag) or block.name in {"body", "html"}:
             return None
         text = " ".join(block.stripped_strings)
         if _DATE_RE.search(text) and _TIME_RE.search(text):
