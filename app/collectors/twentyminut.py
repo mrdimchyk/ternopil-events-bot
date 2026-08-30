@@ -84,6 +84,16 @@ def _is_candidate_title(text: str) -> bool:
     return len(normalized) >= 4
 
 
+def _is_location_candidate(text: str) -> bool:
+    normalized = " ".join(text.split()).lower()
+    return bool(
+        re.search(
+            r"\b(?:м\.?\s*тернопіль|вул\.|майдан|сквер|площа|просп\.|бульв\.|алея)\b",
+            normalized,
+        )
+    )
+
+
 def _title_around_date(lines: list[str], index: int) -> str | None:
     following = lines[index + 1 : index + 4]
     previous = lines[max(0, index - 4) : index]
@@ -92,7 +102,9 @@ def _title_around_date(lines: list[str], index: int) -> str | None:
         (
             candidate
             for candidate in reversed(previous)
-            if _is_candidate_title(candidate) and "тернопіль" not in candidate.lower()
+            if _is_candidate_title(candidate)
+            and not _is_location_candidate(candidate)
+            and "тернопіль" not in candidate.lower()
         ),
         None,
     )
