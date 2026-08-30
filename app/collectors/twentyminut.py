@@ -96,18 +96,9 @@ def _title_around_date(lines: list[str], index: int) -> str | None:
         None,
     )
 
-    # The observed source uses both layouts: date -> title and title/location -> date.
-    # A previous line can be a venue/location; when the next candidate is followed by
-    # another date, that next candidate is the event title.
-    if next_title is not None:
-        next_title_index = lines.index(next_title, index + 1)
-        if any(
-            _parse_date(candidate, datetime.now().year)
-            for candidate in lines[next_title_index + 1 : next_title_index + 3]
-        ):
-            return next_title
-        return next_title
-    return previous_title
+    # Observed layouts are date -> title and title/location -> date. Prefer the
+    # preceding title when present; otherwise use the following title.
+    return previous_title or next_title
 
 
 def _parse_article(html: str, page_url: str, now: datetime) -> list[RawEvent]:
