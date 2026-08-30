@@ -16,5 +16,6 @@ def test_production_registry_contains_verified_collectors():
         "Kvytok",
         "Ternopil City Council",
         "KASA.com.ua",
+        "Internet-bilet.ua",
     ]
     assert OPTIONAL_COLLECTORS

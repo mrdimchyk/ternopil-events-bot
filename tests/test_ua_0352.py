@@ -38,7 +38,7 @@ def test_0352_parses_observed_afisha_event_card(monkeypatch):
     assert result[0].title == "Лунапарк"
     assert result[0].start_at.isoformat() == "2026-08-15T12:00:00"
     assert result[0].source_url.endswith("/afisha/123/lunapark")
-    assert calls[0][0] == "https://www.0352.ua/afisha/2026-08-29"
+    assert calls[0][0] == f"https://www.0352.ua/afisha/{date.today().isoformat()}"
     assert calls[0][1]["timeout"] == 7.5
 
 
