@@ -18,5 +18,6 @@ def test_production_registry_contains_verified_collectors():
         "KASA.com.ua",
         "Internet-bilet.ua",
         "iXYt.info",
+        "Pulse Live",
     ]
     assert OPTIONAL_COLLECTORS

@@ -8,19 +8,21 @@ HTML = """
 <section>
   <article>
     <a href="/events/wellboy-ternopil">
+      <span>18вересня</span>
       <h3>WELLBOY. Пасажир. Великий сольний концерт</h3>
-      <div>18 вересня 2026 · 18:00</div>
-      <div>Тернопіль · Concert Hall Podolyany</div>
-      <div>Квитки від 800 ₴</div>
     </a>
+    <div>Тернопіль · Concert Hall Podolyany</div>
+    <div>18 вересня 2026 · 18:00</div>
+    <div>Квитки від800 ₴</div>
   </article>
   <article>
     <a href="/events/wellboy-lutsk">
+      <span>20вересня</span>
       <h3>WELLBOY. Пасажир. Великий сольний концерт</h3>
-      <div>20 вересня 2026 · 19:00</div>
-      <div>Луцьк · Кіноконцертна зала РЦ «Промінь»</div>
-      <div>Квитки від 350 ₴</div>
     </a>
+    <div>Луцьк · Кіноконцертна зала РЦ «Промінь»</div>
+    <div>20 вересня 2026 · 19:00</div>
+    <div>Квитки від350 ₴</div>
   </article>
 </section>
 </body></html>

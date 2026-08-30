@@ -37,9 +37,14 @@ def _id(url: str, start_at: datetime) -> str:
 
 
 def _event_block(anchor: Tag) -> Tag | None:
-    text = " ".join(anchor.stripped_strings)
-    if "Тернопіль" in text and _DATE_TEXT_RE.search(text):
-        return anchor
+    for parent in anchor.parents:
+        if not isinstance(parent, Tag):
+            continue
+        text = " ".join(parent.stripped_strings)
+        if "Тернопіль" in text and _DATE_TEXT_RE.search(text):
+            return parent
+        if parent.name in {"article", "li", "body", "html"}:
+            break
     return None
 
 
@@ -91,7 +96,11 @@ def _parse(html: str, page_url: str, now: datetime) -> list[RawEvent]:
         title = _title(block, anchor)
         if not title:
             continue
-        venue_match = re.search(r"Тернопіль\s*[·•]\s*(.+?)(?=\s+(?:Квитки|Дивитися|Обрати)\b)", text)
+        venue_match = re.search(
+            r"Тернопіль\s*[·•]\s*(.+?)(?=\s+\d{1,2}\s+(?:січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s+20\d{2}\s*[·•]\s*\d{1,2}:\d{2})",
+            text,
+            re.I,
+        )
         venue = venue_match.group(1).strip() if venue_match else None
         price_match = _PRICE_RE.search(text)
         seen.add(source_url)
