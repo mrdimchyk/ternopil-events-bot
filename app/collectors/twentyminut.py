@@ -34,7 +34,6 @@ _SKIP = {
     "виставки",
     "вистави",
     "майстер-класи",
-    "майстерклас для дітей у книгарні",
     "екскурсії",
 }
 
@@ -88,11 +87,17 @@ def _title_around_date(lines: list[str], index: int) -> str | None:
     following = lines[index + 1 : index + 4]
     previous = lines[max(0, index - 4) : index]
     next_title = next((candidate for candidate in following if _is_candidate_title(candidate)), None)
-    previous_title = next((candidate for candidate in reversed(previous) if _is_candidate_title(candidate)), None)
+    previous_title = next(
+        (
+            candidate
+            for candidate in reversed(previous)
+            if _is_candidate_title(candidate) and "тернопіль" not in candidate.lower()
+        ),
+        None,
+    )
 
     # The observed source uses both layouts: date -> title and title/location -> date.
-    # If the first following candidate is immediately followed by another date,
-    # it belongs to the next event; prefer the preceding event title in that case.
+    # A location line can sit immediately before the date; do not mistake it for the title.
     if next_title is not None:
         next_title_index = lines.index(next_title, index + 1)
         if any(_parse_date(candidate, datetime.now().year) for candidate in lines[next_title_index + 1 : next_title_index + 3]):
