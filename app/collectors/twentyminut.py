@@ -66,7 +66,18 @@ def _is_candidate_title(text: str) -> bool:
     normalized = " ".join(text.split()).strip(" -—:")
     if not normalized or normalized.lower() in _SKIP:
         return False
-    if normalized.startswith(("У Тернополі", "Екскурсії,", "Кількість місць", "Для запису", "Цього", "Нагадаємо")):
+    if normalized.startswith(
+        (
+            "У Тернополі",
+            "Екскурсії,",
+            "Кількість місць",
+            "Для запису",
+            "Вхід",
+            "Цього",
+            "Нагадаємо",
+            "Учасники",
+        )
+    ):
         return False
     if re.match(r"^\d{1,2}\s+\S+", normalized):
         return False
