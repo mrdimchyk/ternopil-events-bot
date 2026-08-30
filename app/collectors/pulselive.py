@@ -43,7 +43,7 @@ def _event_block(anchor: Tag) -> Tag | None:
         text = " ".join(parent.stripped_strings)
         if "Тернопіль" in text and _DATE_TEXT_RE.search(text):
             return parent
-        if parent.name in {"body", "html"}:
+        if parent.name in {"article", "li", "body", "html"}:
             break
     return None
 
