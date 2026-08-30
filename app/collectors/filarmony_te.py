@@ -103,7 +103,8 @@ def _parse_cards(html: str, now: datetime) -> list[RawEvent]:
         if not title:
             continue
 
-        price_match = _PRICE_RE.search(text)
+        card_text = _clean(current.parent.get_text(" ")) if current.parent else text
+        price_match = _PRICE_RE.search(card_text)
         price_text = price_match.group(1).strip(" .") if price_match else None
         key = (title, start_at)
         if key in seen:
