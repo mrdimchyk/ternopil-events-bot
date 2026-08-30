@@ -68,6 +68,7 @@ def _is_candidate_title(text: str) -> bool:
     if normalized.startswith(
         (
             "У Тернополі",
+            "Куди піти",
             "Екскурсії,",
             "Кількість місць",
             "Для запису",
