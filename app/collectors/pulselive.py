@@ -37,9 +37,14 @@ def _id(url: str, start_at: datetime) -> str:
 
 
 def _event_block(anchor: Tag) -> Tag | None:
-    text = " ".join(anchor.stripped_strings)
-    if "Тернопіль" in text and _DATE_TEXT_RE.search(text):
-        return anchor
+    for parent in anchor.parents:
+        if not isinstance(parent, Tag):
+            continue
+        text = " ".join(parent.stripped_strings)
+        if "Тернопіль" in text and _DATE_TEXT_RE.search(text):
+            return parent
+        if parent.name in {"body", "html"}:
+            break
     return None
 
 
