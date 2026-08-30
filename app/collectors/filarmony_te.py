@@ -81,16 +81,15 @@ def _parse_cards(html: str, now: datetime) -> list[RawEvent]:
             if id(parent) in heading_by_node:
                 title = heading_by_node[id(parent)]
                 break
-            parent_headings = [
-                heading
-                for heading in parent.find_all(["h1", "h2", "h3", "h4"])
-                if heading in heading_by_node
-                and nodes.index(heading.string) < index
-                if heading.string is not None
-            ]
-            if parent_headings:
-                title = heading_by_node[id(parent_headings[-1])]
+
+            for previous in reversed(nodes[max(0, index - 12) : index]):
+                previous_parent = previous.parent
+                if previous_parent and previous_parent.name in {"h1", "h2", "h3", "h4"}:
+                    title = _clean(str(previous))
+                    break
+            if title:
                 break
+
         if not title:
             for previous in reversed(nodes[max(0, index - 12) : index]):
                 candidate = _clean(str(previous))
