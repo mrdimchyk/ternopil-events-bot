@@ -17,5 +17,6 @@ def test_production_registry_contains_verified_collectors():
         "Ternopil City Council",
         "KASA.com.ua",
         "Internet-bilet.ua",
+        "iXYt.info",
     ]
     assert OPTIONAL_COLLECTORS
