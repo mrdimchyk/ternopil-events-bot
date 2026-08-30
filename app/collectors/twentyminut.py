@@ -84,6 +84,23 @@ def _is_candidate_title(text: str) -> bool:
     return len(normalized) >= 4
 
 
+def _title_around_date(lines: list[str], index: int) -> str | None:
+    following = lines[index + 1 : index + 4]
+    previous = lines[max(0, index - 4) : index]
+    next_title = next((candidate for candidate in following if _is_candidate_title(candidate)), None)
+    previous_title = next((candidate for candidate in reversed(previous) if _is_candidate_title(candidate)), None)
+
+    # The observed source uses both layouts: date -> title and title/location -> date.
+    # If the first following candidate is immediately followed by another date,
+    # it belongs to the next event; prefer the preceding event title in that case.
+    if next_title is not None:
+        next_title_index = lines.index(next_title, index + 1)
+        if any(_parse_date(candidate, datetime.now().year) for candidate in lines[next_title_index + 1 : next_title_index + 3]):
+            return previous_title or next_title
+        return next_title
+    return previous_title
+
+
 def _parse_article(html: str, page_url: str, now: datetime) -> list[RawEvent]:
     soup = BeautifulSoup(html, "lxml")
     lines = [" ".join(line.split()) for line in soup.get_text("\n").splitlines() if line.strip()]
@@ -98,16 +115,7 @@ def _parse_article(html: str, page_url: str, now: datetime) -> list[RawEvent]:
         if start_at < now:
             continue
 
-        title = None
-        for candidate in lines[index + 1 : index + 4]:
-            if _is_candidate_title(candidate):
-                title = candidate
-                break
-        if title is None:
-            for candidate in reversed(lines[max(0, index - 4) : index]):
-                if _is_candidate_title(candidate):
-                    title = candidate
-                    break
+        title = _title_around_date(lines, index)
         if title is None:
             continue
 
