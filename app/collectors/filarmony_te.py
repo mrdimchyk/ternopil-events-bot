@@ -61,10 +61,6 @@ def _parse_cards(html: str, now: datetime) -> list[RawEvent]:
     result: list[RawEvent] = []
     seen: set[tuple[str, datetime]] = set()
 
-    # The live page exposes each event as a title followed by descriptive text,
-    # then a compact date/time line such as `27вересня(неділя)17:00` and a price.
-    # Prefer heading elements for the title; fall back to the nearest preceding
-    # non-navigation text when the markup is flattened.
     headings = [
         (_clean(node.get_text(" ")), node)
         for node in soup.find_all(["h1", "h2", "h3", "h4"])
@@ -84,6 +80,16 @@ def _parse_cards(html: str, now: datetime) -> list[RawEvent]:
         for parent in [current, *current.parents]:
             if id(parent) in heading_by_node:
                 title = heading_by_node[id(parent)]
+                break
+            parent_headings = [
+                heading
+                for heading in parent.find_all(["h1", "h2", "h3", "h4"])
+                if heading in heading_by_node
+                and nodes.index(heading.string) < index
+                if heading.string is not None
+            ]
+            if parent_headings:
+                title = heading_by_node[id(parent_headings[-1])]
                 break
         if not title:
             for previous in reversed(nodes[max(0, index - 12) : index]):
