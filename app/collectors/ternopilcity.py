@@ -74,6 +74,10 @@ def _extract_rows(page_url: str, html: str) -> list[RawEvent]:
     return result
 
 
+def _future_events(events: list[RawEvent], now: datetime) -> list[RawEvent]:
+    return [event for event in events if event.start_at >= now]
+
+
 def _find_latest_plan(home_url: str, html: str) -> str | None:
     soup = BeautifulSoup(html, "lxml")
     candidates: list[tuple[int, str]] = []
@@ -107,6 +111,4 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
             return []
         plan = client.get(plan_url)
         plan.raise_for_status()
-        events = _extract_rows(plan_url, plan.text)
-        now = datetime.now()
-        return [event for event in events if event.start_at >= now]
+        return _future_events(_extract_rows(plan_url, plan.text), datetime.now())
