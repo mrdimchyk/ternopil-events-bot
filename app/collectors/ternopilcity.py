@@ -107,4 +107,6 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
             return []
         plan = client.get(plan_url)
         plan.raise_for_status()
-        return _extract_rows(plan_url, plan.text)
+        events = _extract_rows(plan_url, plan.text)
+        now = datetime.now()
+        return [event for event in events if event.start_at >= now]
