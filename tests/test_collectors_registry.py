@@ -21,5 +21,6 @@ def test_production_registry_contains_verified_collectors():
         "Pulse Live",
         "20 хвилин Тернопіль",
         "Тернопільська обласна філармонія",
+        "Тернопільський академічний театр ім. Т. Г. Шевченка",
     ]
     assert OPTIONAL_COLLECTORS
