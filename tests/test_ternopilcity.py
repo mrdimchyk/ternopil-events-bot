@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.collectors.ternopilcity import _extract_rows, _find_latest_plan
+from app.collectors.ternopilcity import _extract_rows, _find_latest_plan, _future_events
 
 
 def test_find_latest_plan_uses_real_homepage_link_contract():
@@ -32,3 +32,15 @@ def test_extract_rows_deduplicates_identical_rows():
     row = "<tr><td>1.</td><td>Подія</td><td>03.09.2026 11.00 год</td><td>Центр Garta</td></tr>"
     events = _extract_rows("https://ternopilcity.gov.ua/news/102577.html", f"<table>{row}{row}</table>")
     assert len(events) == 1
+
+
+def test_future_events_excludes_observed_past_work_plan_rows():
+    html = """
+    <table>
+      <tr><td>1.</td><td>Минуло</td><td>14.09.2026 10.00 год</td><td>Місце</td></tr>
+      <tr><td>2.</td><td>Майбутнє</td><td>23.09.2026 10.00 год</td><td>Місце</td></tr>
+    </table>
+    """
+    events = _extract_rows("https://ternopilcity.gov.ua/news/102577.html", html)
+    filtered = _future_events(events, datetime(2026, 9, 15, 0, 0))
+    assert [event.title for event in filtered] == ["Майбутнє"]
