@@ -19,5 +19,6 @@ def test_production_registry_contains_verified_collectors():
         "Internet-bilet.ua",
         "iXYt.info",
         "Pulse Live",
+        "20 хвилин Тернопіль",
     ]
     assert OPTIONAL_COLLECTORS
