@@ -73,7 +73,10 @@ def _title(anchor: Tag) -> str:
 
 def _venue(text: str) -> str | None:
     match = re.search(r"Тернопіль\s+(.+?)(?=(?:\s+від\s+\d|\s+\d[\d ]*\s*грн|\s+Залишилось|\s+Купити|\s+\d{1,2}\s+(?:січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)))", text, re.I)
-    return match.group(1).strip(" |—–•") if match else None
+    if not match:
+        return None
+    venue = match.group(1).strip(" |—–•")
+    return venue if len(venue) <= 255 else None
 
 
 def _price(text: str) -> str | None:
