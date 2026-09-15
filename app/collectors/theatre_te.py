@@ -16,7 +16,7 @@ _MONTHS = {
     "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12,
 }
 _DATE_RE = re.compile(
-    r"(?P<dow>пн|вт|ср|чт|пт|сб|нд),?\s*(?P<day>\d{1,2})\s+(?P<month>січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s+(?P<year>20\d{2})\s*(?P<hour>\d{1,2}):(?P<minute>\d{2})",
+    r"(?P<dow>пн|вт|ср|чт|пт|сб|нд),?\s*(?P<day>\d{1,2})\s+(?P<month>січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s+(?P<year>20\d{2})\s*(?:р\.?\s*)?(?P<hour>\d{1,2}):(?P<minute>\d{2})",
     re.I,
 )
 _PRICE_RE = re.compile(r"₴\s*([\d\s]+(?:-[\d\s]+)?)")
@@ -56,12 +56,10 @@ def _parse_cards(html: str, now: datetime) -> list[RawEvent]:
         if not title or title.lower() in {"репертуар", "найближчі події"}:
             continue
 
-        container = heading
         date_text = ""
         for parent in [heading.parent, *heading.parents]:
             text = _clean(parent.get_text(" "))
             if _DATE_RE.search(text):
-                container = parent
                 date_text = text
                 break
             if len(text) > 1000:
