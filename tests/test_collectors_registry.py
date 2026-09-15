@@ -20,5 +20,6 @@ def test_production_registry_contains_verified_collectors():
         "iXYt.info",
         "Pulse Live",
         "20 хвилин Тернопіль",
+        "Тернопільська обласна філармонія",
     ]
     assert OPTIONAL_COLLECTORS
