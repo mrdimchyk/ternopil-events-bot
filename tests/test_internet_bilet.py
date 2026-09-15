@@ -46,3 +46,24 @@ def test_deduplicates_same_event_link():
     )
     events = _collect_from_html(html, now=datetime(2026, 8, 29, 7, 0))
     assert len({event.external_id for event in events}) == len(events)
+
+
+def test_drops_oversized_venue_observed_in_production_failure():
+    oversized_venue = "A" * 300
+    html = f"""
+    <div>
+      <a href="/uk/example">Example event</a>
+      <div>
+        Тернопіль {oversized_venue}
+        500 грн Залишилось квитків: 100
+        <a href="/uk/example">Example event</a>
+        20 вересня 2026, 18:00
+        <a href="/uk/example">Купити квитки</a>
+      </div>
+    </div>
+    """
+
+    events = _collect_from_html(html, now=datetime(2026, 9, 15, 7, 0))
+
+    assert len(events) == 1
+    assert events[0].venue is None
