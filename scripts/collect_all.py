@@ -6,15 +6,12 @@ from pathlib import Path
 from app.collectors.registry import COLLECTORS
 from app.db.session import SessionLocal, init_db
 from app.services.canonical_events import build_canonical_events
+from app.services.collection_policy import ALLOW_EMPTY_SOURCES
 from app.services.data_quality import enrich_missing_start_at, find_duplicate_candidates, validate_events
 from app.services.events import apply_canonical_group_keys, upsert_events
 from app.services.source_health import source_health_report
 from app.services.source_runs import finish_run, start_run
 
-# A zero-result source is treated as a collector regression unless the source
-# is explicitly known to be legitimately empty. This prevents HTTP/parsing
-# failures from being silently reported as successful runs.
-ALLOW_EMPTY_SOURCES = {"TicketsBox"}
 QUALITY_REPORT = Path("quality-report.json")
 
 
