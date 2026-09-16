@@ -1,6 +1,28 @@
 from app.collectors import concert_ua, filarmony_te, internet_bilet, ixyt, kasa, kvytok, list_in_ua, moemisto, murava, numotamo, pulselive, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox, ternopilcity, ticketsfest, ua_0352, twentyminut, theatre_te
 from app.collectors import karabas
 
+# Source tiers are operational policy, based on production evidence rather than
+# adapter existence. Core failures are release/collection blockers; secondary
+# and quarantined sources remain collected and reported, but cannot invalidate
+# otherwise useful ingest. Quarantined sources are known degraded sources that
+# stay visible so recovery can be detected without parser guesswork.
+CORE_SOURCE_NAMES = {
+    karabas.SOURCE_NAME,
+    numotamo.SOURCE_NAME,
+    moemisto.SOURCE_NAME,
+    ternopilcity.SOURCE_NAME,
+    kasa.SOURCE_NAME,
+    internet_bilet.SOURCE_NAME,
+    ixyt.SOURCE_NAME,
+    pulselive.SOURCE_NAME,
+}
+
+QUARANTINED_SOURCE_NAMES = {
+    concert_ua.SOURCE_NAME,
+    list_in_ua.SOURCE_NAME,
+    twentyminut.SOURCE_NAME,
+}
+
 # Production collectors have passed source-access, parser, ingest and quality checks.
 PRODUCTION_COLLECTORS = [
     (karabas.SOURCE_NAME, karabas.BASE_URL, karabas.collect),
@@ -30,6 +52,20 @@ OPTIONAL_COLLECTORS = [
 ]
 
 COLLECTORS = PRODUCTION_COLLECTORS
+SECONDARY_SOURCE_NAMES = {
+    name for name, _, _ in COLLECTORS
+    if name not in CORE_SOURCE_NAMES | QUARANTINED_SOURCE_NAMES
+}
+
+
+def source_tier(source_name: str) -> str:
+    if source_name in CORE_SOURCE_NAMES:
+        return "core"
+    if source_name in QUARANTINED_SOURCE_NAMES:
+        return "quarantined"
+    if source_name in SECONDARY_SOURCE_NAMES:
+        return "secondary"
+    return "candidate"
 
 
 def validate_collectors() -> None:
@@ -56,6 +92,12 @@ def validate_collectors() -> None:
 
         if not callable(collect):
             errors.append(f"{prefix} ({source_name!r}): collect must be callable")
+
+    classified = CORE_SOURCE_NAMES | SECONDARY_SOURCE_NAMES | QUARANTINED_SOURCE_NAMES
+    if classified != seen_names:
+        errors.append("source tier classification must cover every production collector exactly")
+    if CORE_SOURCE_NAMES & QUARANTINED_SOURCE_NAMES:
+        errors.append("a source cannot be both core and quarantined")
 
     if errors:
         raise RuntimeError("Invalid production collector registry:\n- " + "\n- ".join(errors))
