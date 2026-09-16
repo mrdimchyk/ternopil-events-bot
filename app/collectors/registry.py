@@ -20,12 +20,12 @@ PRODUCTION_COLLECTORS = [
     (pulselive.SOURCE_NAME, pulselive.BASE_URL, pulselive.collect),
     (twentyminut.SOURCE_NAME, twentyminut.BASE_URL, twentyminut.collect),
     (filarmony_te.SOURCE_NAME, filarmony_te.BASE_URL, filarmony_te.collect),
+    (theatre_te.SOURCE_NAME, theatre_te.BASE_URL, theatre_te.collect),
 ]
 
 OPTIONAL_COLLECTORS = [
     (ticketsbox.SOURCE_NAME, ticketsbox.BASE_URL, ticketsbox.collect),
     (ua_0352.SOURCE_NAME, ua_0352.BASE_URL, ua_0352.collect),
-    (theatre_te.SOURCE_NAME, theatre_te.BASE_URL, theatre_te.collect),
 ]
 
 COLLECTORS = PRODUCTION_COLLECTORS
