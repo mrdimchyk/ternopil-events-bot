@@ -1,4 +1,4 @@
-from scripts.collect_all import ALLOW_EMPTY_SOURCES
+from app.services.collection_policy import ALLOW_EMPTY_SOURCES
 
 
 def test_murava_empty_catalog_is_explicitly_allowed():
