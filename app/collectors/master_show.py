@@ -46,8 +46,9 @@ def _event_card(anchor: Tag) -> Tag | None:
         if not isinstance(block, Tag):
             return None
         text = " ".join(block.stripped_strings)
-        if _DATE_RE.search(text) and "Тернопіль" in text:
-            return block
+        event_links = block.select('a[href*="/events/"]')
+        if _DATE_RE.search(text) and len(event_links) == 1:
+            return block if "Тернопіль" in text else None
         block = block.parent
     return None
 
