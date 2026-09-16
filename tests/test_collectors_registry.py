@@ -22,5 +22,6 @@ def test_production_registry_contains_verified_collectors():
         "20 хвилин Тернопіль",
         "Тернопільська обласна філармонія",
         "Тернопільський академічний театр ім. Т. Г. Шевченка",
+        "TicketsFest",
     ]
     assert OPTIONAL_COLLECTORS
