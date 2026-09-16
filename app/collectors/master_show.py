@@ -12,30 +12,10 @@ SOURCE_NAME = "Master Show"
 BASE_URL = "https://master-show.com/events"
 
 _MONTHS = {
-    "січень": 1,
-    "січня": 1,
-    "лютий": 2,
-    "лютого": 2,
-    "березень": 3,
-    "березня": 3,
-    "квітень": 4,
-    "квітня": 4,
-    "травень": 5,
-    "травня": 5,
-    "червень": 6,
-    "червня": 6,
-    "липень": 7,
-    "липня": 7,
-    "серпень": 8,
-    "серпня": 8,
-    "вересень": 9,
-    "вересня": 9,
-    "жовтень": 10,
-    "жовтня": 10,
-    "листопад": 11,
-    "листопада": 11,
-    "грудень": 12,
-    "грудня": 12,
+    "січень": 1, "січня": 1, "лютий": 2, "лютого": 2, "березень": 3, "березня": 3,
+    "квітень": 4, "квітня": 4, "травень": 5, "травня": 5, "червень": 6, "червня": 6,
+    "липень": 7, "липня": 7, "серпень": 8, "серпня": 8, "вересень": 9, "вересня": 9,
+    "жовтень": 10, "жовтня": 10, "листопад": 11, "листопада": 11, "грудень": 12, "грудня": 12,
 }
 _DATE_RE = re.compile(
     r"(?P<day>\d{1,2})\s+(?P<month>січень|січня|лютий|лютого|березень|березня|квітень|квітня|травень|травня|червень|червня|липень|липня|серпень|серпня|вересень|вересня|жовтень|жовтня|листопад|листопада|грудень|грудня)"
@@ -51,13 +31,7 @@ def _parse_start(text: str, now: datetime) -> datetime | None:
         return None
     groups = match.groupdict()
     try:
-        return datetime(
-            int(groups["year"] or now.year),
-            _MONTHS[groups["month"].lower()],
-            int(groups["day"]),
-            int(groups["hour"]),
-            int(groups["minute"]),
-        )
+        return datetime(int(groups["year"] or now.year), _MONTHS[groups["month"].lower()], int(groups["day"]), int(groups["hour"]), int(groups["minute"]))
     except (KeyError, ValueError):
         return None
 
@@ -91,7 +65,6 @@ def _collect_from_html(html: str, now: datetime | None = None) -> list[RawEvent]
     soup = BeautifulSoup(html, "lxml")
     result: list[RawEvent] = []
     seen: set[str] = set()
-
     for anchor in soup.select('a[href*="/events/"]'):
         href = anchor.get("href")
         if not href:
@@ -111,33 +84,11 @@ def _collect_from_html(html: str, now: datetime | None = None) -> list[RawEvent]
         if not title:
             continue
         price_match = _PRICE_RE.search(text)
-        result.append(
-            RawEvent(
-                external_id=_id(source_url, start_at),
-                title=title,
-                category="Концерт/подія",
-                start_at=start_at,
-                venue=_venue(text),
-                address=None,
-                price_text=f"від {price_match.group('price').strip()} UAH" if price_match else None,
-                ticket_url=source_url,
-                source_url=source_url,
-                description=text[:1500],
-            )
-        )
+        result.append(RawEvent(external_id=_id(source_url, start_at), title=title, category="Концерт/подія", start_at=start_at, venue=_venue(text), address=None, price_text=f"від {price_match.group('price').strip()} UAH" if price_match else None, ticket_url=source_url, source_url=source_url, description=text[:1500]))
     return result
 
 
 def collect(timeout: float = 20.0) -> list[RawEvent]:
-    response = httpx.get(
-        BASE_URL,
-        headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
-        },
-        timeout=timeout,
-        follow_redirects=True,
-    )
+    response = httpx.get(BASE_URL, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7"}, timeout=timeout, follow_redirects=True)
     response.raise_for_status()
     return _collect_from_html(response.text)

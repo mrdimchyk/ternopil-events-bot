@@ -1,4 +1,4 @@
-from app.collectors import concert_ua, filarmony_te, internet_bilet, ixyt, kasa, kvytok, list_in_ua, moemisto, murava, numotamo, pulselive, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox, ternopilcity, ticketsfest, ua_0352, twentyminut, theatre_te
+from app.collectors import concert_ua, filarmony_te, internet_bilet, ixyt, kasa, kvytok, list_in_ua, master_show, moemisto, murava, numotamo, pulselive, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox, ternopilcity, ticketsfest, ua_0352, twentyminut, theatre_te
 from app.collectors import karabas
 
 # Production collectors have passed source-access, parser, ingest and quality checks.
@@ -22,6 +22,7 @@ PRODUCTION_COLLECTORS = [
     (filarmony_te.SOURCE_NAME, filarmony_te.BASE_URL, filarmony_te.collect),
     (theatre_te.SOURCE_NAME, theatre_te.BASE_URL, theatre_te.collect),
     (ticketsfest.SOURCE_NAME, ticketsfest.BASE_URL, ticketsfest.collect),
+    (master_show.SOURCE_NAME, master_show.BASE_URL, master_show.collect),
 ]
 
 OPTIONAL_COLLECTORS = [
@@ -37,7 +38,6 @@ def validate_collectors() -> None:
     errors: list[str] = []
     seen_names: set[str] = set()
     seen_urls: set[str] = set()
-
     for index, (source_name, base_url, collect) in enumerate(COLLECTORS, start=1):
         prefix = f"production collector #{index}"
         if not isinstance(source_name, str) or not source_name.strip():
@@ -46,17 +46,14 @@ def validate_collectors() -> None:
             errors.append(f"{prefix}: duplicate SOURCE_NAME {source_name!r}")
         else:
             seen_names.add(source_name)
-
         if not isinstance(base_url, str) or not base_url.startswith(("http://", "https://")):
             errors.append(f"{prefix}: BASE_URL must be an absolute HTTP(S) URL")
         elif base_url in seen_urls:
             errors.append(f"{prefix}: duplicate BASE_URL {base_url!r}")
         else:
             seen_urls.add(base_url)
-
         if not callable(collect):
             errors.append(f"{prefix} ({source_name!r}): collect must be callable")
-
     if errors:
         raise RuntimeError("Invalid production collector registry:\n- " + "\n- ".join(errors))
 
