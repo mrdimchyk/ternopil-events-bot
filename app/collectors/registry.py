@@ -1,4 +1,4 @@
-from app.collectors import concert_ua, filarmony_te, internet_bilet, ixyt, kasa, kvytok, list_in_ua, moemisto, murava, numotamo, pulselive, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox, ternopilcity, ua_0352, twentyminut, theatre_te
+from app.collectors import concert_ua, filarmony_te, internet_bilet, ixyt, kasa, kvytok, list_in_ua, moemisto, murava, numotamo, pulselive, teatr_org_ua, ticket_dp, ticket_kiev, ticketsbox, ternopilcity, ticketsfest, ua_0352, twentyminut, theatre_te
 from app.collectors import karabas
 
 # Production collectors have passed source-access, parser, ingest and quality checks.
@@ -21,6 +21,7 @@ PRODUCTION_COLLECTORS = [
     (twentyminut.SOURCE_NAME, twentyminut.BASE_URL, twentyminut.collect),
     (filarmony_te.SOURCE_NAME, filarmony_te.BASE_URL, filarmony_te.collect),
     (theatre_te.SOURCE_NAME, theatre_te.BASE_URL, theatre_te.collect),
+    (ticketsfest.SOURCE_NAME, ticketsfest.BASE_URL, ticketsfest.collect),
 ]
 
 OPTIONAL_COLLECTORS = [
