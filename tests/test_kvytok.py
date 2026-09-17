@@ -1,3 +1,4 @@
+from datetime import datetime
 from types import SimpleNamespace
 
 from app.collectors import kvytok
@@ -19,6 +20,12 @@ LIVE_CARD_HTML = '''
 '''
 
 
+class FixedDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 9, 17, 12, 0, tzinfo=tz)
+
+
 def test_kvytok_contract_points_to_ternopil_catalog():
     assert kvytok.SOURCE_NAME == "Kvytok"
     assert kvytok.BASE_URL == "https://kvytok.co/ternopil/"
@@ -32,6 +39,7 @@ def test_kvytok_parses_observed_event_card_contract(monkeypatch):
         return SimpleNamespace(text=LIVE_CARD_HTML, raise_for_status=lambda: None)
 
     monkeypatch.setattr(kvytok.httpx, "get", fake_get)
+    monkeypatch.setattr(kvytok, "datetime", FixedDateTime)
 
     result = kvytok.collect(timeout=7.5)
 
