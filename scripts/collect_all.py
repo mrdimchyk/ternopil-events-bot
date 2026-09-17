@@ -11,6 +11,7 @@ from app.services.data_quality import enrich_missing_start_at, find_duplicate_ca
 from app.services.events import apply_canonical_group_keys, upsert_events
 from app.services.source_health import source_health_report
 from app.services.source_runs import finish_run, start_run
+from app.services.source_value import source_value_metrics
 
 QUALITY_REPORT = Path("quality-report.json")
 
@@ -77,6 +78,7 @@ def main() -> None:
     duplicates = find_duplicate_candidates(events_by_source)
     canonical_events = build_canonical_events(events_by_source)
     multi_source_canonical = [event for event in canonical_events if len(event.sources) >= 2]
+    source_value = source_value_metrics(canonical_events, source_names)
 
     with SessionLocal() as session:
         canonical_group_changes = apply_canonical_group_keys(session, canonical_events)
@@ -84,7 +86,12 @@ def main() -> None:
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
-            source: {"collected": len(events), "tier": source_tier(source), **health["sources"].get(source, {})}
+            source: {
+                "collected": len(events),
+                "tier": source_tier(source),
+                "value": asdict(source_value[source]),
+                **health["sources"].get(source, {}),
+            }
             for source, events in events_by_source.items()
         },
         "source_health": health,
@@ -100,6 +107,7 @@ def main() -> None:
                 for event in multi_source_canonical
             ],
         },
+        "source_value": {source: asdict(value) for source, value in source_value.items()},
         "quality": {"invalid_events": quality_errors, "warnings": quality_warnings, "repaired_dates": repaired_dates, "issues": [asdict(issue) for issue in quality_issues]},
         "duplicate_candidates": [asdict(duplicate) for duplicate in duplicates],
     }
@@ -110,6 +118,14 @@ def main() -> None:
     for source, item in health["sources"].items():
         print(f"SOURCE HEALTH: {source} tier={source_tier(source)} status={item['status']} latest_collected={item['latest_collected']} median_collected={item['median_collected']} events_next_7d={item['events_next_7d']} next_event_at={item['next_event_at']} freshness_stale={item['freshness_stale']} message={item['message']}")
     print(f"CANONICAL SUMMARY: raw_events={totals['collected']} canonical_events={len(canonical_events)} multi_source_events={len(multi_source_canonical)} group_key_changes={canonical_group_changes}")
+    for source in source_names:
+        value = source_value[source]
+        print(
+            f"SOURCE VALUE: {source} tier={source_tier(source)} "
+            f"canonical={value.canonical_events} unique={value.unique_events} "
+            f"shared={value.shared_events} overlap_ratio={value.overlap_ratio:.3f} "
+            f"unique_coverage_ratio={value.unique_coverage_ratio:.3f}"
+        )
     for duplicate in duplicates:
         print("DUPLICATE CANDIDATE: " f"sources={','.join(duplicate.sources)} " f"start_at={duplicate.start_at} " f"titles={' | '.join(duplicate.titles)}")
 
