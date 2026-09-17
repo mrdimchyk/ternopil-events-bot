@@ -34,7 +34,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONUNBUFFERED: "1"
         run: python scripts/collect_all.py
-      - name: Publish source health summary
+      - name: Publish source health and value summary
         if: always()
         run: |
           if [ -f quality-report.json ]; then
@@ -46,13 +46,26 @@ jobs:
           health = report.get("source_health", {})
           print(f"**Overall:** `{health.get('overall', 'unknown')}`")
           print("")
-          print("| Source | Status | Latest | Median | Next 7d | Next event |")
-          print("|---|---|---:|---:|---:|---|")
+          print("| Source | Tier | Status | Latest | Median | Next 7d | Next event |")
+          print("|---|---|---|---:|---:|---:|---|")
           for name, item in health.get("sources", {}).items():
               print(
-                  f"| {name} | `{item.get('status')}` | {item.get('latest_collected')} "
-                  f"| {item.get('median_collected')} | {item.get('events_next_7d')} "
-                  f"| {item.get('next_event_at')} |"
+                  f"| {name} | `{item.get('tier', 'unknown')}` | `{item.get('status')}` "
+                  f"| {item.get('latest_collected')} | {item.get('median_collected')} "
+                  f"| {item.get('events_next_7d')} | {item.get('next_event_at')} |"
+              )
+
+          print("")
+          print("## Source value")
+          print("")
+          print("| Source | Tier | Canonical | Unique | Shared | Overlap | Unique coverage |")
+          print("|---|---|---:|---:|---:|---:|---:|")
+          for name, item in report.get("source_value", {}).items():
+              print(
+                  f"| {name} | `{item.get('tier', 'unknown')}` | {item.get('canonical_events', 0)} "
+                  f"| {item.get('unique_events', 0)} | {item.get('shared_events', 0)} "
+                  f"| {item.get('overlap_ratio', 0):.1%} "
+                  f"| {item.get('unique_coverage_ratio', 0):.1%} |"
               )
           PY
           else
