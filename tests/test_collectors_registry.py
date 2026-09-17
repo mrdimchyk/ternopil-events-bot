@@ -1,4 +1,9 @@
-from app.collectors.registry import COLLECTORS, OPTIONAL_COLLECTORS, PRODUCTION_COLLECTORS
+from app.collectors.registry import (
+    COLLECTORS,
+    OPTIONAL_COLLECTORS,
+    PRODUCTION_COLLECTORS,
+    source_tier,
+)
 
 
 def test_production_registry_contains_verified_collectors():
@@ -25,3 +30,7 @@ def test_production_registry_contains_verified_collectors():
         "TicketsFest",
     ]
     assert OPTIONAL_COLLECTORS
+
+
+def test_low_marginal_value_ixyt_is_secondary_not_core():
+    assert source_tier("iXYt.info") == "secondary"
