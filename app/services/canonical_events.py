@@ -63,7 +63,10 @@ def build_canonical_events(events_by_source: dict[str, list[RawEvent]]) -> list[
     for source, events in events_by_source.items():
         for event in events:
             for cluster in clusters:
-                if _same_event(event, cluster[0][1]):
+                # Match every cluster member, not only its first representative.
+                # This mirrors DB/user-facing canonicalization and preserves
+                # transitive source variants (A≈B, B≈C) as one occurrence.
+                if any(_same_event(event, member) for _, member in cluster):
                     cluster.append((source, event))
                     break
             else:

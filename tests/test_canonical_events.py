@@ -62,6 +62,22 @@ def test_different_events_remain_separate():
     assert len(build_canonical_events({"KARABAS": [first, second]})) == 2
 
 
+def test_cluster_matching_checks_every_member(monkeypatch):
+    first = event("a", "A", "https://example.com/a")
+    bridge = event("b", "B", "https://example.com/b")
+    third = event("c", "C", "https://example.com/c")
+
+    def adjacent_match(left: RawEvent, right: RawEvent, time_tolerance_minutes: int = 15) -> bool:
+        del time_tolerance_minutes
+        return frozenset((left.external_id, right.external_id)) in {frozenset(("a", "b")), frozenset(("b", "c"))}
+
+    monkeypatch.setattr("app.services.canonical_events._same_event", adjacent_match)
+    result = build_canonical_events({"source-a": [first], "source-b": [bridge], "source-c": [third]})
+
+    assert len(result) == 1
+    assert {source.external_id for source in result[0].sources} == {"a", "b", "c"}
+
+
 def test_aware_and_naive_datetimes_can_be_compared():
     naive = event("k1", "Я бачу, вас цікавить пітьма", "https://karabas.com/1", datetime(2026, 10, 8, 18, 0))
     aware = event("t1", "Я бачу, вас цікавить пітьма", "https://teatr.org.ua/1", datetime(2026, 10, 8, 18, 0, tzinfo=timezone.utc))
