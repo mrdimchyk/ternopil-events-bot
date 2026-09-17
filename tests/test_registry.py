@@ -8,7 +8,7 @@ from app.collectors.registry import (
     source_tier,
     validate_collectors,
 )
-from scripts.collect_all import collection_should_fail
+from app.services.collection_policy import collection_should_fail
 
 
 def test_production_registry_contains_verified_collectors():
