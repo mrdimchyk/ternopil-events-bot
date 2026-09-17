@@ -4,3 +4,8 @@
 # MURAVA's official public events block is currently empty, so zero results are
 # a valid source state rather than evidence of a parser regression.
 ALLOW_EMPTY_SOURCES = {"TicketsBox", "MURAVA"}
+
+
+def collection_should_fail(*, core_failures: int, quality_errors: int) -> bool:
+    """Only core-source or accepted-data quality failures invalidate useful ingest."""
+    return bool(core_failures or quality_errors)
