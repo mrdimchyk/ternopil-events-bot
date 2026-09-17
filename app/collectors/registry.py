@@ -13,7 +13,6 @@ CORE_SOURCE_NAMES = {
     ternopilcity.SOURCE_NAME,
     kasa.SOURCE_NAME,
     internet_bilet.SOURCE_NAME,
-    ixyt.SOURCE_NAME,
     pulselive.SOURCE_NAME,
 }
 
