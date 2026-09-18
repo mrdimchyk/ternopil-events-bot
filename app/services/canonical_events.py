@@ -4,10 +4,8 @@ from datetime import datetime, timezone
 from app.collectors.base import RawEvent
 from app.services.event_identity import (
     make_group_key,
-    normalize_title,
-    title_variant_match,
+    occurrence_variant_match,
     title_without_embedded_datetime,
-    venue_variant_match,
 )
 
 
@@ -40,21 +38,15 @@ def _comparison_time(value: datetime) -> datetime:
 
 
 def _same_event(a: RawEvent, b: RawEvent, time_tolerance_minutes: int = 15) -> bool:
-    if a.start_at is None or b.start_at is None:
-        return False
-    delta = _comparison_time(a.start_at) - _comparison_time(b.start_at)
-    if abs(delta.total_seconds()) > time_tolerance_minutes * 60:
-        return False
-
-    if not title_variant_match(a.title, b.title):
-        return False
-
-    venue_a = normalize_title(a.venue or "")
-    venue_b = normalize_title(b.venue or "")
-    if venue_a and venue_b and not venue_variant_match(venue_a, venue_b):
-        return False
-
-    return True
+    return occurrence_variant_match(
+        a.title,
+        a.start_at,
+        a.venue,
+        b.title,
+        b.start_at,
+        b.venue,
+        time_tolerance_minutes=time_tolerance_minutes,
+    )
 
 
 def build_canonical_events(events_by_source: dict[str, list[RawEvent]]) -> list[CanonicalEvent]:
@@ -63,9 +55,6 @@ def build_canonical_events(events_by_source: dict[str, list[RawEvent]]) -> list[
     for source, events in events_by_source.items():
         for event in events:
             for cluster in clusters:
-                # Match every cluster member, not only its first representative.
-                # This mirrors DB/user-facing canonicalization and preserves
-                # transitive source variants (A≈B, B≈C) as one occurrence.
                 if any(_same_event(event, member) for _, member in cluster):
                     cluster.append((source, event))
                     break
