@@ -77,6 +77,27 @@ def test_latest_error_is_down_and_included_in_overall_status():
     assert report["sources"]["SourceA"]["latest_status"] == "error"
 
 
+def test_overall_health_can_be_scoped_to_gating_sources():
+    db = session()
+    add_runs(db, Source(name="Core", base_url="https://example.com/core"), [10, 10, 10])
+    add_runs(
+        db,
+        Source(name="Quarantined", base_url="https://example.com/quarantined"),
+        [0, 10, 10],
+        ["error", "success", "success"],
+    )
+
+    report = source_health_report(
+        db,
+        ["Core", "Quarantined"],
+        overall_source_names={"Core"},
+    )
+
+    assert report["overall"] == "healthy"
+    assert report["sources"]["Core"]["status"] == "healthy"
+    assert report["sources"]["Quarantined"]["status"] == "down"
+
+
 def test_source_with_no_future_events_is_not_stale():
     db = session()
     add_runs(db, Source(name="KARABAS", base_url="https://example.com"), [47, 46, 49, 45])

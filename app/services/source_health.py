@@ -116,6 +116,7 @@ def source_health_report(
     source_names: list[str],
     *,
     allow_empty_sources: set[str] | None = None,
+    overall_source_names: set[str] | None = None,
     history_limit: int = 7,
     now: datetime | None = None,
     freshness_window_days: int = FRESHNESS_WINDOW_DAYS,
@@ -184,7 +185,8 @@ def source_health_report(
             "message": health.message,
         }
 
-    statuses = [item["status"] for item in results.values()]
+    overall_names = overall_source_names if overall_source_names is not None else set(results)
+    statuses = [item["status"] for name, item in results.items() if name in overall_names]
     if any(status in {"down", "degraded"} for status in statuses):
         overall = "degraded"
     elif any(status == "unknown" for status in statuses):
