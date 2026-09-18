@@ -72,8 +72,14 @@ def main() -> None:
             print(f"{source_name}: tier={tier} ERROR {exc}")
 
     source_names = [source_name for source_name, _, _ in COLLECTORS]
+    core_source_names = {source_name for source_name in source_names if source_tier(source_name) == "core"}
     with SessionLocal() as session:
-        health = source_health_report(session, source_names, allow_empty_sources=ALLOW_EMPTY_SOURCES)
+        health = source_health_report(
+            session,
+            source_names,
+            allow_empty_sources=ALLOW_EMPTY_SOURCES,
+            overall_source_names=core_source_names,
+        )
 
     duplicates = find_duplicate_candidates(events_by_source)
     canonical_events = build_canonical_events(events_by_source)
