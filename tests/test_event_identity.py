@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.services.event_identity import (
     extract_datetime_from_text,
     make_group_key,
+    occurrence_variant_match,
     title_variant_match,
     title_without_embedded_datetime,
 )
@@ -38,3 +39,27 @@ def test_title_variant_with_ticket_metadata_is_same_event():
     )
     assert title_variant_match(base, scraped)
     assert title_without_embedded_datetime(scraped) == base
+
+
+def test_occurrence_variant_match_accepts_source_variants_within_tolerance():
+    start = datetime(2026, 9, 20, 19, 0, tzinfo=timezone.utc)
+    assert occurrence_variant_match(
+        "Chico & Qatoshi x TIK | День Незалежності",
+        start,
+        "Na Пошті",
+        "Chico & Qatoshi x TIK | День Незалежності 20 вересня 2026 19:10",
+        start + timedelta(minutes=10),
+        "Na Пошті, Тернопіль",
+    )
+
+
+def test_occurrence_variant_match_rejects_different_occurrence_time():
+    start = datetime(2026, 9, 20, 19, 0)
+    assert not occurrence_variant_match(
+        "Вистава Великий вечір",
+        start,
+        "Драмтеатр",
+        "Вистава Великий вечір",
+        start + timedelta(minutes=16),
+        "Драмтеатр",
+    )

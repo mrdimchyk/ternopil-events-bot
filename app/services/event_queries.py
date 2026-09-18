@@ -8,9 +8,8 @@ from sqlalchemy.orm import Session, selectinload
 from app.db.models import Event
 from app.services.event_identity import (
     normalize_title,
-    title_variant_match,
+    occurrence_variant_match,
     title_without_embedded_datetime,
-    venue_variant_match,
 )
 
 
@@ -32,20 +31,15 @@ def _match_title(value: str) -> str:
 
 def _same_occurrence(a: Event, b: Event, time_tolerance_minutes: int = 15) -> bool:
     """Match source variants only when they describe the same occurrence."""
-    if a.start_at is None or b.start_at is None:
-        return False
-    if abs((_utc(a.start_at) - _utc(b.start_at)).total_seconds()) > time_tolerance_minutes * 60:
-        return False
-
-    if not title_variant_match(a.title, b.title):
-        return False
-
-    venue_a = normalize_title(a.venue.name if a.venue else "")
-    venue_b = normalize_title(b.venue.name if b.venue else "")
-    if venue_a and venue_b and not venue_variant_match(venue_a, venue_b):
-        return False
-
-    return True
+    return occurrence_variant_match(
+        a.title,
+        a.start_at,
+        a.venue.name if a.venue else None,
+        b.title,
+        b.start_at,
+        b.venue.name if b.venue else None,
+        time_tolerance_minutes=time_tolerance_minutes,
+    )
 
 
 def events_for_day(session: Session, day: datetime) -> list[Event]:
