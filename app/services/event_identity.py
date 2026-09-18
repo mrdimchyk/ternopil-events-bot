@@ -1,7 +1,7 @@
 import hashlib
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 MONTHS_UK = {
@@ -65,9 +65,6 @@ def title_without_embedded_datetime(title: str) -> str:
     cleaned = EVENT_DATETIME_RE.sub(" ", title or "")
     cleaned = _strip_source_metadata(cleaned)
     cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    # Keep the conventional separator spacing in titles such as "Artist | Event".
-    # Pipe is semantic title content, not punctuation whose leading whitespace
-    # should be stripped.
     cleaned = re.sub(r"\s+([,:])", r"\1", cleaned)
     cleaned = re.sub(r"([,|])\s*$", "", cleaned)
     return cleaned.strip(" -—|,:") or (title or "")
@@ -101,6 +98,34 @@ def venue_variant_match(venue_a: str, venue_b: str) -> bool:
     if normalized_a in normalized_b or normalized_b in normalized_a:
         return True
     return SequenceMatcher(None, normalized_a, normalized_b).ratio() >= 0.80
+
+
+def occurrence_variant_match(
+    title_a: str,
+    start_a: datetime | None,
+    venue_a: str | None,
+    title_b: str,
+    start_b: datetime | None,
+    venue_b: str | None,
+    *,
+    time_tolerance_minutes: int = 15,
+) -> bool:
+    """Shared canonical occurrence rule for ingest/report and user-facing queries."""
+    if start_a is None or start_b is None:
+        return False
+
+    def utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    if abs((utc(start_a) - utc(start_b)).total_seconds()) > time_tolerance_minutes * 60:
+        return False
+    if not title_variant_match(title_a, title_b):
+        return False
+    if venue_a and venue_b and not venue_variant_match(venue_a, venue_b):
+        return False
+    return True
 
 
 def make_group_key(title: str, start_at: datetime | None, venue: str | None) -> str:
