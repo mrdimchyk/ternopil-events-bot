@@ -32,6 +32,7 @@ def test_production_registry_contains_verified_collectors():
     assert OPTIONAL_COLLECTORS
 
 
-def test_low_marginal_value_sources_are_secondary_not_core():
+def test_low_marginal_value_or_unreliable_sources_are_secondary_not_core():
     assert source_tier("iXYt.info") == "secondary"
     assert source_tier("Kvytok") == "secondary"
+    assert source_tier("Pulse Live") == "secondary"
