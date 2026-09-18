@@ -49,12 +49,15 @@ def test_zero_result_is_degraded_unless_explicitly_allowed():
     assert report["sources"]["Broken"]["zero_result"] is True
 
 
-def test_allowed_empty_source_is_not_marked_zero_result():
+def test_allowed_empty_source_is_quiet_not_healthy():
     db = session()
     add_runs(db, Source(name="TicketsBox", base_url="https://example.com"), [0, 0, 0])
     report = source_health_report(db, ["TicketsBox"], allow_empty_sources={"TicketsBox"})
-    assert report["sources"]["TicketsBox"]["zero_result"] is False
-    assert report["sources"]["TicketsBox"]["status"] == "healthy"
+    item = report["sources"]["TicketsBox"]
+    assert report["overall"] == "healthy"
+    assert item["zero_result"] is False
+    assert item["status"] == "quiet"
+    assert "explicitly allowed to be empty" in item["message"]
 
 
 def test_large_drop_is_degraded():

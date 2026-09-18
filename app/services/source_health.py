@@ -76,6 +76,9 @@ def _status_for_runs(
     elif anomaly:
         status = "degraded"
         message = f"Latest count {latest_count} is below 50% of the historical median {baseline:.1f}."
+    elif allow_empty and latest.status == "success" and latest_count == 0:
+        status = "quiet"
+        message = "Latest run returned zero events; this source is explicitly allowed to be empty."
     elif freshness_stale:
         status = "quiet"
         if next_event_at is not None:
