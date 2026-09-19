@@ -1,6 +1,7 @@
 import hashlib
 import re
 from datetime import datetime
+from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
@@ -20,6 +21,7 @@ _DATE_RE = re.compile(
     re.I,
 )
 _PRICE_RE = re.compile(r"₴\s*([\d\s]+(?:-[\d\s]+)?)")
+_PAGE_RE = re.compile(r"^https://www\.theatre\.te\.ua/repertory/page/(?P<page>\d+)$")
 
 
 def _id(start_at: datetime, title: str) -> str:
@@ -44,6 +46,18 @@ def _parse_date(text: str) -> datetime | None:
         )
     except (KeyError, ValueError):
         return None
+
+
+def _pagination_urls(html: str) -> list[str]:
+    """Return the repertory index and every pagination page exposed by it."""
+    soup = BeautifulSoup(html, "lxml")
+    pages: dict[int, str] = {1: BASE_URL}
+    for anchor in soup.select("a[href]"):
+        url = urljoin(BASE_URL + "/", anchor.get("href", "")).rstrip("/")
+        match = _PAGE_RE.fullmatch(url)
+        if match:
+            pages[int(match.group("page"))] = url
+    return [pages[number] for number in sorted(pages)]
 
 
 def _parse_cards(html: str, now: datetime) -> list[RawEvent]:
@@ -99,7 +113,21 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/139 Safari/537.36",
         "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
     }
+    now = datetime.now()
+    result: list[RawEvent] = []
+    seen_ids: set[str] = set()
+
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
         response = client.get(BASE_URL)
         response.raise_for_status()
-        return _parse_cards(response.text, datetime.now())
+        pages = _pagination_urls(response.text)
+
+        for page_url in pages:
+            html = response.text if page_url == BASE_URL else client.get(page_url).raise_for_status().text
+            for event in _parse_cards(html, now):
+                if event.external_id in seen_ids:
+                    continue
+                seen_ids.add(event.external_id)
+                result.append(event)
+
+    return result
