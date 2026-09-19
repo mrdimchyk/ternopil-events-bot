@@ -19,7 +19,7 @@ Tier — це operational policy на основі production evidence, а не 
 
 ### Production health і source value
 
-Collection ізолює non-core failures: `secondary`/`quarantined` source може бути `down` або `degraded` і залишатися видимим у health report, не маскуючи стан справних core sources. Source value оцінюється не лише raw count: production reporting використовує canonical/unique events, overlap, health/failure signals та фактичне покриття.
+Collection ізолює non-core failures: `secondary`/`quarantined` source може бути `down` або `degraded` і залишатися видимим у health report, не маскуючи стан справних core sources. Source value оцінюється не лише raw count: production reporting використовує canonical/unique events, overlap, health/failure signals та фактичне покриття. Окремо reporting показує field coverage для `start_at`, venue, address, price, ticket URL і description; ці показники є observability-сигналами, а не quality gates, бо частина полів може бути легітимно відсутня у джерелі.
 
 Нові джерела не слід додавати лише для збільшення raw count. Спочатку мають бути стабільні collection/fault isolation, source tiers, canonicalization/dedup і quality gates.
 
