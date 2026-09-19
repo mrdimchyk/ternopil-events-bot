@@ -65,6 +65,22 @@ jobs:
                   f"| {item.get('overlap_ratio', 0):.1%} "
                   f"| {item.get('unique_coverage_ratio', 0):.1%} |"
               )
+
+          print("")
+          print("## Source field coverage")
+          print("")
+          print("| Source | Events | Start | Venue | Address | Price | Ticket URL | Description |")
+          print("|---|---:|---:|---:|---:|---:|---:|---:|")
+          for name, item in report.get("source_field_coverage", {}).items():
+              print(
+                  f"| {name} | {item.get('event_count', 0)} "
+                  f"| {item.get('start_at_ratio', 0):.1%} "
+                  f"| {item.get('venue_ratio', 0):.1%} "
+                  f"| {item.get('address_ratio', 0):.1%} "
+                  f"| {item.get('price_ratio', 0):.1%} "
+                  f"| {item.get('ticket_url_ratio', 0):.1%} "
+                  f"| {item.get('description_ratio', 0):.1%} |"
+              )
           PY
           else
             echo "## Source health" >> "$GITHUB_STEP_SUMMARY"
