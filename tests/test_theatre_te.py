@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from app.collectors.theatre_te import _parse_cards
+import app.collectors.theatre_te as theatre_te
+from app.collectors.theatre_te import _pagination_urls, _parse_cards
 
 
 HTML = """
@@ -40,3 +41,76 @@ def test_theatre_parses_observed_repertory_cards():
 def test_theatre_skips_past_events():
     events = _parse_cards(HTML, datetime(2026, 10, 5, 12, 0))
     assert events == []
+
+
+def test_theatre_discovers_all_repertory_pagination_pages():
+    html = """
+    <nav>
+      <a href="/repertory">1</a>
+      <a href="/repertory/page/2">2</a>
+      <a href="https://www.theatre.te.ua/repertory/page/3/">3</a>
+      <a href="/news/page/2">news</a>
+    </nav>
+    """
+    assert _pagination_urls(html) == [
+        "https://www.theatre.te.ua/repertory",
+        "https://www.theatre.te.ua/repertory/page/2",
+        "https://www.theatre.te.ua/repertory/page/3",
+    ]
+
+
+def test_theatre_collect_fetches_and_combines_paginated_repertory(monkeypatch):
+    def page(title: str, day: int, pagination: str = "") -> str:
+        return f"""
+        <html><body>
+          {pagination}
+          <article>
+            <h3>{title}</h3>
+            <div>сб, {day} жовтня 2099 р. 18:00</div>
+            <div>₴ 200</div>
+          </article>
+        </body></html>
+        """
+
+    pages = {
+        theatre_te.BASE_URL: page(
+            "Сторінка 1",
+            1,
+            '<a href="/repertory/page/2">2</a><a href="/repertory/page/3">3</a>',
+        ),
+        f"{theatre_te.BASE_URL}/page/2": page("Сторінка 2", 2),
+        f"{theatre_te.BASE_URL}/page/3": page("Сторінка 3", 3),
+    }
+    requested = []
+
+    class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            return self
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, url):
+            requested.append(url)
+            return FakeResponse(pages[url])
+
+    monkeypatch.setattr(theatre_te.httpx, "Client", FakeClient)
+
+    events = theatre_te.collect()
+
+    assert requested == [
+        theatre_te.BASE_URL,
+        f"{theatre_te.BASE_URL}/page/2",
+        f"{theatre_te.BASE_URL}/page/3",
+    ]
+    assert [event.title for event in events] == ["Сторінка 1", "Сторінка 2", "Сторінка 3"]
