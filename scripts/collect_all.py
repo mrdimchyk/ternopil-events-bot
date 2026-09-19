@@ -9,6 +9,7 @@ from app.services.canonical_events import build_canonical_events
 from app.services.collection_policy import ALLOW_EMPTY_SOURCES, collection_should_fail
 from app.services.data_quality import enrich_missing_start_at, find_duplicate_candidates, validate_events
 from app.services.events import apply_canonical_group_keys, upsert_events
+from app.services.source_field_coverage import source_field_coverage
 from app.services.source_health import source_health_report
 from app.services.source_runs import finish_run, start_run
 from app.services.source_value import source_value_metrics
@@ -85,6 +86,7 @@ def main() -> None:
     canonical_events = build_canonical_events(events_by_source)
     multi_source_canonical = [event for event in canonical_events if len(event.sources) >= 2]
     source_value = source_value_metrics(canonical_events, source_names)
+    field_coverage = source_field_coverage(events_by_source, source_names)
 
     with SessionLocal() as session:
         canonical_group_changes = apply_canonical_group_keys(session, canonical_events)
@@ -96,6 +98,7 @@ def main() -> None:
                 "collected": len(events),
                 "tier": source_tier(source),
                 "value": asdict(source_value[source]),
+                "field_coverage": asdict(field_coverage[source]),
                 **health["sources"].get(source, {}),
             }
             for source, events in events_by_source.items()
@@ -114,6 +117,7 @@ def main() -> None:
             ],
         },
         "source_value": {source: asdict(value) for source, value in source_value.items()},
+        "source_field_coverage": {source: asdict(value) for source, value in field_coverage.items()},
         "quality": {"invalid_events": quality_errors, "warnings": quality_warnings, "repaired_dates": repaired_dates, "issues": [asdict(issue) for issue in quality_issues]},
         "duplicate_candidates": [asdict(duplicate) for duplicate in duplicates],
     }
@@ -131,6 +135,14 @@ def main() -> None:
             f"canonical={value.canonical_events} unique={value.unique_events} "
             f"shared={value.shared_events} overlap_ratio={value.overlap_ratio:.3f} "
             f"unique_coverage_ratio={value.unique_coverage_ratio:.3f}"
+        )
+    for source in source_names:
+        fields = field_coverage[source]
+        print(
+            f"SOURCE FIELDS: {source} events={fields.event_count} "
+            f"start={fields.start_at_ratio:.3f} venue={fields.venue_ratio:.3f} "
+            f"address={fields.address_ratio:.3f} price={fields.price_ratio:.3f} "
+            f"ticket={fields.ticket_url_ratio:.3f} description={fields.description_ratio:.3f}"
         )
     for duplicate in duplicates:
         print("DUPLICATE CANDIDATE: " f"sources={','.join(duplicate.sources)} " f"start_at={duplicate.start_at} " f"titles={' | '.join(duplicate.titles)}")
