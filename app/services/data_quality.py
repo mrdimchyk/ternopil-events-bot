@@ -1,11 +1,10 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
 from urllib.parse import urlparse
 
 from app.collectors.base import RawEvent
-from app.services.event_identity import extract_datetime_from_text, normalize_title
+from app.services.event_identity import extract_datetime_from_text, occurrence_variant_match
 
 
 @dataclass(slots=True)
@@ -85,32 +84,44 @@ def find_duplicate_candidates(
     time_tolerance_minutes: int = 15,
     title_similarity: float = 0.90,
 ) -> list[DuplicateCandidate]:
+    """Report cross-source duplicates using the same identity rule as canonicalization.
+
+    ``title_similarity`` is retained for API compatibility with existing callers; canonical
+    title matching is intentionally delegated to ``occurrence_variant_match`` so quality
+    reporting cannot drift from ingest and user-facing dedup semantics.
+    """
+    del title_similarity
     flattened = [
         (source, event)
         for source, events in events_by_source.items()
         for event in events
     ]
     candidates: list[DuplicateCandidate] = []
-    seen: set[frozenset[str]] = set()
+    seen: set[frozenset[tuple[str, str]]] = set()
 
     for index, (source_a, event_a) in enumerate(flattened):
-        start_a = _naive(event_a.start_at)
-        if start_a is None:
+        if event_a.start_at is None:
             continue
-        title_a = normalize_title(event_a.title)
         for source_b, event_b in flattened[index + 1 :]:
             if source_a == source_b:
                 continue
-            start_b = _naive(event_b.start_at)
-            if start_b is None:
-                continue
-            if abs((start_a - start_b).total_seconds()) > time_tolerance_minutes * 60:
-                continue
-            title_b = normalize_title(event_b.title)
-            if SequenceMatcher(None, title_a, title_b).ratio() < title_similarity:
+            if not occurrence_variant_match(
+                event_a.title,
+                event_a.start_at,
+                event_a.venue,
+                event_b.title,
+                event_b.start_at,
+                event_b.venue,
+                time_tolerance_minutes=time_tolerance_minutes,
+            ):
                 continue
 
-            key = frozenset({event_a.external_id, event_b.external_id})
+            key = frozenset(
+                {
+                    (source_a, event_a.external_id),
+                    (source_b, event_b.external_id),
+                }
+            )
             if key in seen:
                 continue
             seen.add(key)
@@ -118,7 +129,7 @@ def find_duplicate_candidates(
                 DuplicateCandidate(
                     sources=tuple(sorted({source_a, source_b})),
                     titles=(event_a.title, event_b.title),
-                    start_at=start_a,
+                    start_at=_naive(event_a.start_at),
                     event_ids=(event_a.external_id, event_b.external_id),
                 )
             )
