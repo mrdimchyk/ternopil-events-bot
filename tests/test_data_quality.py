@@ -9,13 +9,14 @@ def make_event(
     title: str = "Imagine Dragons",
     start_at: datetime | None = None,
     source_url: str = "https://example.com/event",
+    venue: str = "Театр",
 ) -> RawEvent:
     return RawEvent(
         external_id=external_id,
         title=title,
         category=None,
         start_at=start_at or datetime(2026, 10, 8, 19, 0),
-        venue="Театр",
+        venue=venue,
         address="Тернопіль",
         price_text="500 грн",
         ticket_url="https://example.com/tickets",
@@ -64,6 +65,14 @@ def test_cross_source_duplicate_does_not_match_different_titles():
     start = datetime(2026, 10, 8, 19, 0)
     first = make_event("karabas-1", "Imagine Dragons", start)
     second = make_event("concert-1", "Robbie Williams", start)
+
+    assert find_duplicate_candidates({"KARABAS": [first], "Concert.ua": [second]}) == []
+
+
+def test_duplicate_quality_signal_respects_canonical_venue_identity():
+    start = datetime(2026, 10, 8, 19, 0)
+    first = make_event("karabas-1", "Imagine Dragons", start, venue="ПК Березіль")
+    second = make_event("concert-1", "Imagine Dragons", start, venue="Драмтеатр")
 
     assert find_duplicate_candidates({"KARABAS": [first], "Concert.ua": [second]}) == []
 
