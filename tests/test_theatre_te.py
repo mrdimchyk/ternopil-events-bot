@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.collectors.theatre_te import _parse_cards
+from app.collectors.theatre_te import _pagination_urls, _parse_cards
 
 
 HTML = """
@@ -40,3 +40,19 @@ def test_theatre_parses_observed_repertory_cards():
 def test_theatre_skips_past_events():
     events = _parse_cards(HTML, datetime(2026, 10, 5, 12, 0))
     assert events == []
+
+
+def test_theatre_discovers_all_repertory_pagination_pages():
+    html = """
+    <nav>
+      <a href="/repertory">1</a>
+      <a href="/repertory/page/2">2</a>
+      <a href="https://www.theatre.te.ua/repertory/page/3/">3</a>
+      <a href="/news/page/2">news</a>
+    </nav>
+    """
+    assert _pagination_urls(html) == [
+        "https://www.theatre.te.ua/repertory",
+        "https://www.theatre.te.ua/repertory/page/2",
+        "https://www.theatre.te.ua/repertory/page/3",
+    ]
