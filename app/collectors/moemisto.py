@@ -115,7 +115,7 @@ def _category_urls(html: str) -> list[str]:
         if parsed.netloc != "moemisto.ua":
             continue
         parts = [part for part in parsed.path.split("/") if part]
-        if len(parts) == 2 and parts[0] == "te":
+        if len(parts) == 2 and parts[0] == "te" and "." not in parts[1]:
             urls.add(url)
     return sorted(urls)
 
