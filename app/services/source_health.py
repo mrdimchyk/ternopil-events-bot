@@ -19,6 +19,8 @@ class SourceHealth:
     latest_status: str | None
     latest_collected: int | None
     median_collected: float | None
+    failed_runs: int
+    failure_rate: float
     zero_result: bool
     anomaly: bool
     events_next_7d: int
@@ -38,6 +40,9 @@ def _status_for_runs(
 ) -> SourceHealth:
     latest = runs[0] if runs else None
     counts = [run.collected_count for run in runs if run.status == "success"]
+    completed_runs = [run for run in runs if run.status in {"success", "error"}]
+    failed_runs = sum(1 for run in completed_runs if run.status == "error")
+    failure_rate = failed_runs / len(completed_runs) if completed_runs else 0.0
     latest_count = latest.collected_count if latest else None
     zero_result = bool(latest and latest.status == "success" and latest_count == 0 and not allow_empty)
 
@@ -102,6 +107,8 @@ def _status_for_runs(
         latest_status=latest.status if latest else None,
         latest_collected=latest_count,
         median_collected=float(baseline) if baseline is not None else None,
+        failed_runs=failed_runs,
+        failure_rate=failure_rate,
         zero_result=zero_result,
         anomaly=anomaly,
         events_next_7d=events_next_7d,
@@ -177,6 +184,8 @@ def source_health_report(
             "latest_status": health.latest_status,
             "latest_collected": health.latest_collected,
             "median_collected": health.median_collected,
+            "failed_runs": health.failed_runs,
+            "failure_rate": health.failure_rate,
             "zero_result": health.zero_result,
             "anomaly": health.anomaly,
             "events_next_7d": health.events_next_7d,

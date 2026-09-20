@@ -175,3 +175,37 @@ def test_source_with_near_term_event_is_not_stale():
     assert item["status"] == "healthy"
     assert item["freshness_stale"] is False
     assert item["events_next_7d"] == 1
+
+
+def test_source_health_reports_recent_failure_rate():
+    db = session()
+    add_runs(
+        db,
+        Source(name="Flaky", base_url="https://example.com/flaky"),
+        [10, 0, 12, 0],
+        ["success", "error", "success", "error"],
+    )
+
+    report = source_health_report(db, ["Flaky"])
+    item = report["sources"]["Flaky"]
+
+    assert item["runs_checked"] == 4
+    assert item["failed_runs"] == 2
+    assert item["failure_rate"] == 0.5
+
+
+def test_failure_rate_ignores_noncompleted_runs():
+    db = session()
+    add_runs(
+        db,
+        Source(name="Running", base_url="https://example.com/running"),
+        [10, 0, 12],
+        ["success", "running", "success"],
+    )
+
+    report = source_health_report(db, ["Running"])
+    item = report["sources"]["Running"]
+
+    assert item["runs_checked"] == 3
+    assert item["failed_runs"] == 0
+    assert item["failure_rate"] == 0.0

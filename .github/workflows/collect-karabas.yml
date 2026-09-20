@@ -44,12 +44,13 @@ jobs:
           health = report.get("source_health", {})
           print(f"**Overall:** `{health.get('overall', 'unknown')}`")
           print("")
-          print("| Source | Tier | Status | Latest | Median | Next 7d | Next event |")
-          print("|---|---|---|---:|---:|---:|---|")
+          print("| Source | Tier | Status | Latest | Median | Failure rate | Next 7d | Next event |")
+          print("|---|---|---|---:|---:|---:|---:|---|")
           for name, item in health.get("sources", {}).items():
               print(
                   f"| {name} | `{item.get('tier', 'unknown')}` | `{item.get('status')}` "
                   f"| {item.get('latest_collected')} | {item.get('median_collected')} "
+                  f"| {item.get('failure_rate', 0):.1%} "
                   f"| {item.get('events_next_7d')} | {item.get('next_event_at')} |"
               )
 
