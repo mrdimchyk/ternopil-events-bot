@@ -100,27 +100,15 @@ def _title_from_block(block: Tag, anchor: Tag) -> str | None:
     return title.strip(" —–|•") or None
 
 
-def collect_html(
+def parse_html(
+    html: str,
     url: str,
-    source_name: str | None = None,
-    timeout: float = 20.0,
+    *,
+    now: datetime | None = None,
 ) -> list[RawEvent]:
-    """Collect event cards from server-rendered HTML when JSON-LD is absent."""
-    _ = source_name
-    response = httpx.get(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
-        },
-        timeout=timeout,
-        follow_redirects=True,
-    )
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "lxml")
-    now = datetime.now()
+    """Parse server-rendered event cards from already-fetched HTML."""
+    soup = BeautifulSoup(html, "lxml")
+    current_time = now or datetime.now()
     result: list[RawEvent] = []
     seen_urls: set[str] = set()
 
@@ -151,7 +139,7 @@ def collect_html(
             continue
 
         block_text = " ".join(selected.stripped_strings)
-        start_at = _parse_datetime(block_text, now=now)
+        start_at = _parse_datetime(block_text, now=current_time)
         if not start_at:
             continue
         title = _title_from_block(selected, anchor)
@@ -166,7 +154,12 @@ def collect_html(
             idx = low.find(marker)
             if idx >= 0:
                 tail = block_text[idx + len(marker):].strip(" ,|•—–")
-                venue = re.split(r"\s+від\s+\d|\s+квитки\b", tail, maxsplit=1, flags=re.I)[0].strip()
+                venue = re.split(
+                    r"\s+від\s+\d|\s+квитки\b",
+                    tail,
+                    maxsplit=1,
+                    flags=re.I,
+                )[0].strip()
                 if venue:
                     break
 
@@ -189,3 +182,25 @@ def collect_html(
         )
 
     return list({event.external_id: event for event in result}.values())
+
+
+def collect_html(
+    url: str,
+    source_name: str | None = None,
+    timeout: float = 20.0,
+) -> list[RawEvent]:
+    """Collect event cards from server-rendered HTML when JSON-LD is absent."""
+    _ = source_name
+    response = httpx.get(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
+        },
+        timeout=timeout,
+        follow_redirects=True,
+    )
+    response.raise_for_status()
+    return parse_html(response.text, url)
