@@ -126,7 +126,7 @@ def main() -> None:
     print(f"QUALITY SUMMARY: invalid_events={quality_errors} warnings={quality_warnings} repaired_dates={repaired_dates} duplicate_candidates={len(duplicates)}")
     print(f"SOURCE HEALTH: overall={health['overall']}")
     for source, item in health["sources"].items():
-        print(f"SOURCE HEALTH: {source} tier={source_tier(source)} status={item['status']} latest_collected={item['latest_collected']} median_collected={item['median_collected']} events_next_7d={item['events_next_7d']} next_event_at={item['next_event_at']} freshness_stale={item['freshness_stale']} message={item['message']}")
+        print(f"SOURCE HEALTH: {source} tier={source_tier(source)} status={item['status']} latest_collected={item['latest_collected']} median_collected={item['median_collected']} failed_runs={item['failed_runs']} failure_rate={item['failure_rate']:.3f} events_next_7d={item['events_next_7d']} next_event_at={item['next_event_at']} freshness_stale={item['freshness_stale']} message={item['message']}")
     print(f"CANONICAL SUMMARY: raw_events={totals['collected']} canonical_events={len(canonical_events)} multi_source_events={len(multi_source_canonical)} group_key_changes={canonical_group_changes}")
     for source in source_names:
         value = source_value[source]
