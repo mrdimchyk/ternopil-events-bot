@@ -19,3 +19,11 @@ def test_collection_workflow_does_not_run_on_every_main_push() -> None:
     assert re.search(r"^\s{2}workflow_dispatch:\s*$", trigger_block, re.MULTILINE)
     assert re.search(r"^\s{2}schedule:\s*$", trigger_block, re.MULTILINE)
     assert not re.search(r"^\s{2}push:\s*$", trigger_block, re.MULTILINE)
+
+
+def test_collection_schedule_avoids_top_of_hour_congestion() -> None:
+    workflow = Path(".github/workflows/collect-karabas.yml").read_text(encoding="utf-8")
+    trigger_block = workflow.split("jobs:", 1)[0]
+
+    assert 'cron: "17 6,10,14,18 * * *"' in trigger_block
+    assert 'cron: "0 6,10,14,18 * * *"' not in trigger_block
