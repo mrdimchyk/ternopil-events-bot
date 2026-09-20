@@ -67,6 +67,8 @@ def collect(
     events: dict[str, RawEvent] = {}
     for page_url, html in pages:
         for event in parse_html(html, page_url, now=current_time):
+            if event.title.strip().lower() in _CATEGORY_LABELS:
+                continue
             if event.start_at is None or event.start_at < current_time:
                 continue
             events.setdefault(event.external_id, event)
