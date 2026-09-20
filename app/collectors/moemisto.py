@@ -1,7 +1,7 @@
 import hashlib
 import re
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup, Tag
@@ -29,6 +29,22 @@ _RANGE_RE = re.compile(
 )
 _PRICE_RE = re.compile(r"(?:від\s*)?\d[\d\s]*(?:[.,]\d+)?\s*(?:₴|грн)", re.I)
 _GENERIC = {"купити квиток", "купити", "детальніше", "всі", "читати далі"}
+_CATEGORY_LABELS = {
+    "концерти",
+    "відпочинок",
+    "дітям",
+    "театр",
+    "навчання",
+    "шопінг",
+    "кіно",
+    "виставки",
+    "релігія",
+    "вечірки",
+    "подорожі",
+    "суспільні події",
+    "спорт",
+    "розіграші",
+}
 
 
 def _date_match(text: str) -> re.Match[str] | None:
@@ -66,11 +82,11 @@ def _id(url: str, title: str, start_at: datetime) -> str:
 
 def _title(anchor: Tag, block: Tag) -> str | None:
     text = " ".join(anchor.stripped_strings).strip()
-    if text and text.lower() not in _GENERIC:
+    if text and text.lower() not in _GENERIC | _CATEGORY_LABELS:
         return text.strip(" —–|•")
     for tag in block.select("h1, h2, h3, h4, h5, [class*='title'], [class*='name']"):
         text = " ".join(tag.stripped_strings).strip()
-        if text and text.lower() not in _GENERIC:
+        if text and text.lower() not in _GENERIC | _CATEGORY_LABELS:
             return text.strip(" —–|•")
     return None
 
@@ -86,25 +102,39 @@ def _venue(text: str, title: str) -> str | None:
     return prefix or None
 
 
-def collect(timeout: float = 20.0, now: datetime | None = None) -> list[RawEvent]:
-    response = httpx.get(
-        BASE_URL,
-        headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
-        },
-        timeout=timeout,
-        follow_redirects=True,
-    )
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "lxml")
-    current_time = now or datetime.now()
+def _category_urls(html: str) -> list[str]:
+    """Discover Moemisto Ternopil category catalogs exposed by the landing page."""
+    soup = BeautifulSoup(html, "lxml")
+    urls: set[str] = set()
+    for anchor in soup.select("a[href]"):
+        label = " ".join(anchor.stripped_strings).strip().lower()
+        if label not in _CATEGORY_LABELS:
+            continue
+        url = urljoin(BASE_URL + "/", anchor.get("href", "")).rstrip("/")
+        parsed = urlparse(url)
+        if parsed.netloc != "moemisto.ua":
+            continue
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) == 2 and parts[0] == "te" and "." not in parts[1]:
+            urls.add(url)
+    return sorted(urls)
+
+
+def _collect_from_html(
+    html: str,
+    page_url: str,
+    *,
+    now: datetime,
+) -> list[RawEvent]:
+    soup = BeautifulSoup(html, "lxml")
     result: list[RawEvent] = []
     seen: set[str] = set()
 
     for anchor in soup.select("a[href]"):
-        href = urljoin(BASE_URL, anchor.get("href", ""))
+        anchor_text = " ".join(anchor.stripped_strings).strip().lower()
+        if anchor_text in _CATEGORY_LABELS:
+            continue
+        href = urljoin(page_url, anchor.get("href", ""))
         if not href.startswith("https://moemisto.ua/te/") or href.rstrip("/") == BASE_URL.rstrip("/"):
             continue
         block: Tag | None = anchor
@@ -120,9 +150,9 @@ def collect(timeout: float = 20.0, now: datetime | None = None) -> list[RawEvent
         if selected is None:
             continue
         text = " ".join(selected.stripped_strings)
-        start_at = _parse_start(text, current_time)
+        start_at = _parse_start(text, now)
         title = _title(anchor, selected)
-        if not start_at or not title or start_at < current_time or href in seen:
+        if not start_at or not title or start_at < now or href in seen:
             continue
         seen.add(href)
         price = _PRICE_RE.search(text)
@@ -141,4 +171,39 @@ def collect(timeout: float = 20.0, now: datetime | None = None) -> list[RawEvent
                 description=text[:1500],
             )
         )
+
     return result
+
+
+def collect(timeout: float = 20.0, now: datetime | None = None) -> list[RawEvent]:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.7",
+    }
+    current_time = now or datetime.now()
+
+    response = httpx.get(
+        BASE_URL,
+        headers=headers,
+        timeout=timeout,
+        follow_redirects=True,
+    )
+    response.raise_for_status()
+
+    pages = [(BASE_URL, response.text)]
+    for category_url in _category_urls(response.text):
+        category_response = httpx.get(
+            category_url,
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=True,
+        )
+        category_response.raise_for_status()
+        pages.append((category_url, category_response.text))
+
+    events: dict[str, RawEvent] = {}
+    for page_url, html in pages:
+        for event in _collect_from_html(html, page_url, now=current_time):
+            events.setdefault(event.external_id, event)
+    return list(events.values())
