@@ -29,9 +29,9 @@ def test_source_tiers_cover_production_registry_without_overlap():
 
 
 def test_non_core_failures_do_not_invalidate_useful_ingest():
-    assert not collection_should_fail(core_failures=0, core_quality_errors=0)
-    assert collection_should_fail(core_failures=1, quality_errors=0)
-    assert collection_should_fail(core_failures=0, quality_errors=1)
+    assert not collection_should_fail(core_failures=0, core_core_quality_errors=0)
+    assert collection_should_fail(core_failures=1, core_quality_errors=0)
+    assert collection_should_fail(core_failures=0, core_quality_errors=1)
 
 
 def test_optional_registry_keeps_unverified_adapters_out_of_production():
