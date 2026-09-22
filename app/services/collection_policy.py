@@ -6,6 +6,6 @@
 ALLOW_EMPTY_SOURCES = {"TicketsBox", "MURAVA"}
 
 
-def collection_should_fail(*, core_failures: int, quality_errors: int) -> bool:
-    """Only core-source or accepted-data quality failures invalidate useful ingest."""
-    return bool(core_failures or quality_errors)
+def collection_should_fail(*, core_failures: int, core_quality_errors: int) -> bool:
+    """Only core-source failures or core data-quality errors invalidate useful ingest."""
+    return bool(core_failures or core_quality_errors)
