@@ -23,6 +23,7 @@ def main() -> None:
     events_by_source = {}
     failures = []
     quality_errors = 0
+    core_quality_errors = 0
     quality_warnings = 0
     quality_issues = []
     repaired_dates = 0
@@ -49,6 +50,8 @@ def main() -> None:
             errors = [issue for issue in issues if issue.severity == "error"]
             warnings = [issue for issue in issues if issue.severity == "warning"]
             quality_errors += len(errors)
+            if tier == "core":
+                core_quality_errors += len(errors)
             quality_warnings += len(warnings)
             for issue in issues:
                 print(f"QUALITY {issue.severity.upper()}: {issue.source_name} {issue.code}: {issue.message}")
@@ -149,11 +152,14 @@ def main() -> None:
 
     print(f"TOTAL: collected={totals['collected']} changed={totals['changed']} failed={totals['failed']} core_failed={totals['core_failed']}")
 
-    if collection_should_fail(core_failures=totals["core_failed"], quality_errors=quality_errors):
+    if collection_should_fail(
+        core_failures=totals["core_failed"], core_quality_errors=core_quality_errors
+    ):
         raise RuntimeError(
             f"Collection completed with {totals['core_failed']} core source failure(s), "
             f"{totals['failed'] - totals['core_failed']} isolated non-core failure(s), "
-            f"{quality_errors} data-quality error(s), source_health={health['overall']}."
+            f"{quality_errors} data-quality error(s) ({core_quality_errors} core), "
+            f"source_health={health['overall']}."
         )
 
 
