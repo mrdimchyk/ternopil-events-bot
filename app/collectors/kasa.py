@@ -1,5 +1,6 @@
 import hashlib
 import re
+import time
 from datetime import datetime
 from urllib.parse import urljoin
 
@@ -14,6 +15,20 @@ _DATE_RE = re.compile(r"(?P<year>20\d{2})/(?P<month>\d{2})/(?P<day>\d{2})")
 _TIME_RE = re.compile(r"Час початку\s*(?P<hour>\d{1,2}):(?P<minute>\d{2})")
 _PRICE_RE = re.compile(r"Ціна від\s*(?P<price>\d[\d ]*)\s*грн", re.I)
 _GENERIC = {"придбати квиток", "подія вже відбулася", "особистий кабінет"}
+
+
+def _get_with_retry(get, url: str, **kwargs) -> httpx.Response:
+    """Retry transient GET timeouts; never hide exhausted attempts or parser errors."""
+    for attempt in range(3):
+        try:
+            response = get(url, **kwargs)
+            response.raise_for_status()
+            return response
+        except httpx.TimeoutException:
+            if attempt == 2:
+                raise
+            time.sleep(attempt + 1)
+    raise AssertionError("unreachable")
 
 
 def _parse_start(text: str) -> datetime | None:
@@ -133,7 +148,8 @@ def _venue_urls(html: str) -> list[str]:
 
 def collect(timeout: float = 20.0) -> list[RawEvent]:
     now = datetime.now()
-    response = httpx.get(
+    response = _get_with_retry(
+        httpx.get,
         BASE_URL,
         headers={
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
@@ -159,7 +175,7 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
         follow_redirects=True,
     ) as client:
         for venue_url in venue_urls:
-            venue_response = client.get(venue_url)
+            venue_response = _get_with_retry(client.get, venue_url)
             venue_response.raise_for_status()
             for event in _parse_venue_page(venue_response.text, venue_url, now):
                 if event.external_id in seen_ids:

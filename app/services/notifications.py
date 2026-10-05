@@ -9,6 +9,7 @@ from app.config import settings
 from app.db.models import Event, EventChange
 from app.db.user_models import FavoriteNotification, TelegramUser
 from app.services.user_event_state import related_group_keys
+from app.services.event_queries import canonical_events_for_range
 
 DEFAULT_NOTIFY_BEFORE_MINUTES = 24 * 60
 
@@ -92,25 +93,10 @@ def tomorrow_events(session: Session, now: datetime | None = None) -> list[Event
     start_local = datetime.combine(tomorrow, datetime.min.time(), tzinfo=timezone_info)
     end_local = start_local + timedelta(days=1)
 
-    events = session.scalars(
-        select(Event)
-        .options(joinedload(Event.venue))
-        .where(
-            Event.status == "active",
-            Event.start_at >= start_local,
-            Event.start_at < end_local,
-        )
-        .order_by(Event.start_at.asc(), Event.id.asc())
-    ).all()
-
-    unique: list[Event] = []
-    seen_groups: set[str] = set()
-    for event in events:
-        if event.group_key in seen_groups:
-            continue
-        seen_groups.add(event.group_key)
-        unique.append(event)
-    return unique
+    return [
+        item.representative
+        for item in canonical_events_for_range(session, start_local, end_local)
+    ]
 
 
 def due_notifications(session: Session, now: datetime) -> list[tuple[FavoriteNotification, NotificationItem]]:

@@ -3,6 +3,7 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from urllib.parse import urlparse
 
 MONTHS_UK = {
     "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
@@ -63,6 +64,10 @@ def _strip_source_metadata(text: str) -> str:
 def title_without_embedded_datetime(title: str) -> str:
     """Remove embedded date/time and common scraped source metadata from a title."""
     cleaned = EVENT_DATETIME_RE.sub(" ", title or "")
+    cleaned = re.sub(
+        r"\s*\((?:Тернопільський\s+)?театр\b[^)]*\)",
+        " ", cleaned, flags=re.IGNORECASE,
+    )
     cleaned = _strip_source_metadata(cleaned)
     cleaned = re.sub(r"\s{2,}", " ", cleaned)
     cleaned = re.sub(r"\s+([,:])", r"\1", cleaned)
@@ -74,6 +79,10 @@ def title_variant_match(title_a: str, title_b: str) -> bool:
     """Match source title variants while rejecting unrelated short titles."""
     normalized_a = normalize_title(title_without_embedded_datetime(title_a))
     normalized_b = normalize_title(title_without_embedded_datetime(title_b))
+    # These labels describe the presentation, rather than the play's name.
+    prefix = r"^(?:(?:дитяча\s+)?вистава\s+|прем\s*єра\s+)"
+    normalized_a = re.sub(prefix, "", normalized_a)
+    normalized_b = re.sub(prefix, "", normalized_b)
     if normalized_a == normalized_b:
         return True
     if SequenceMatcher(None, normalized_a, normalized_b).ratio() >= 0.90:
@@ -85,6 +94,17 @@ def title_variant_match(title_a: str, title_b: str) -> bool:
     if len(short) < 3:
         return False
     return len(short & long) / len(short) >= 0.85
+
+
+def is_catalog_listing(source_url: str) -> bool:
+    """Exclude the observed TicketsFest city/index URLs, including stored legacy rows."""
+    parsed = urlparse(source_url)
+    if parsed.hostname not in {"ticketsfest.com.ua", "www.ticketsfest.com.ua"}:
+        return False
+    parts = parsed.path.strip("/").split("/")
+    if parts and parts[0] in {"en", "ua", "uk", "ru"}:
+        parts = parts[1:]
+    return not parts or parts == ["events"] or parts == ["events", "ternopil"]
 
 
 def venue_variant_match(venue_a: str, venue_b: str) -> bool:

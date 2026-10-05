@@ -65,3 +65,44 @@ def test_kasa_parses_observed_current_venue_contract_and_filters_past_events():
     assert event.price_text == "Ціна від 200 грн"
     assert event.ticket_url == "https://kasa.com.ua/event/panna-francishka"
     assert event.external_id
+
+
+def test_kasa_retries_transient_timeout_then_returns_response(monkeypatch):
+    import httpx
+    from app.collectors.kasa import _get_with_retry
+    attempts = []
+    monkeypatch.setattr('app.collectors.kasa.time.sleep', lambda seconds: None)
+
+    def get(url):
+        attempts.append(url)
+        if len(attempts) < 3:
+            raise httpx.ReadTimeout('The read operation timed out')
+        return httpx.Response(200, text=CITY_HTML, request=httpx.Request('GET', url))
+
+    assert _get_with_retry(get, 'https://kasa.com.ua/ternopol/').text == CITY_HTML
+    assert len(attempts) == 3
+
+
+def test_kasa_exhausted_timeouts_still_fail_and_http_errors_are_not_retried(monkeypatch):
+    import httpx
+    import pytest
+    from app.collectors.kasa import _get_with_retry
+    attempts = []
+    monkeypatch.setattr('app.collectors.kasa.time.sleep', lambda seconds: None)
+
+    def get(url):
+        attempts.append(url)
+        raise httpx.ReadTimeout('timeout')
+
+    with pytest.raises(httpx.ReadTimeout):
+        _get_with_retry(get, 'https://kasa.com.ua/ternopol/')
+    assert len(attempts) == 3
+    attempts.clear()
+
+    def forbidden(url):
+        attempts.append(url)
+        return httpx.Response(403, request=httpx.Request('GET', url))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _get_with_retry(forbidden, 'https://kasa.com.ua/ternopol/')
+    assert len(attempts) == 1

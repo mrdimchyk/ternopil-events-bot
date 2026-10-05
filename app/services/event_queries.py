@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Event
 from app.services.event_identity import (
+    is_catalog_listing,
     normalize_title,
     occurrence_variant_match,
     title_without_embedded_datetime,
@@ -64,6 +65,8 @@ def canonicalize_db_events(events: list[Event]) -> list[CanonicalDbEvent]:
     clusters: list[list[Event]] = []
 
     for event in events:
+        if is_catalog_listing(event.source_url):
+            continue
         matched_cluster: list[Event] | None = None
         for cluster in clusters:
             if any(
