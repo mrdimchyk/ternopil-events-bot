@@ -63,3 +63,9 @@ def test_occurrence_variant_match_rejects_different_occurrence_time():
         start + timedelta(minutes=16),
         "Драмтеатр",
     )
+
+
+def test_short_screenshot_play_titles_match_source_labels():
+    assert title_variant_match('«Аладдін»', 'Дитяча вистава «Аладдін» (Тернопільський театр ім. Т. Г. Шевченка)')
+    assert title_variant_match('«Обережно - дебют!»', 'Прем`єра. «Обережно - дебют!»')
+    assert not title_variant_match('Аладдін', 'Аладдін і чарівна лампа')

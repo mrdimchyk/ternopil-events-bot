@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from app.collectors.base import RawEvent
 from app.collectors.generic_html import _category, _parse_datetime
+from app.services.event_identity import is_catalog_listing
 
 BASE_URL = "https://ticketsfest.com.ua/en/events/ternopil/"
 SOURCE_NAME = "TicketsFest"
@@ -34,9 +35,13 @@ def _parse_cards(html: str, now: datetime | None = None) -> list[RawEvent]:
         card_text = ""
         for _ in range(5):
             container = container.parent
-            if container is None:
+            if container is None or container.name in {"body", "html"}:
                 break
             card_text = " ".join(container.stripped_strings)
+            # A page section can contain many cards; its heading is not an event.
+            if len(DATE_RE.findall(card_text)) > 1:
+                card_text = ""
+                break
             if DATE_RE.search(card_text) and "Ternopil" in card_text:
                 break
         match = DATE_RE.search(card_text)
@@ -52,7 +57,7 @@ def _parse_cards(html: str, now: datetime | None = None) -> list[RawEvent]:
         if link is None:
             continue
         href = urljoin(BASE_URL, link.get("href", ""))
-        if href in seen_urls:
+        if is_catalog_listing(href) or href in seen_urls:
             continue
 
         lines = [line.strip() for line in container.stripped_strings if line.strip()]
