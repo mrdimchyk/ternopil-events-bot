@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import re
 import time
 from datetime import datetime
@@ -17,14 +18,19 @@ _PRICE_RE = re.compile(r"Ціна від\s*(?P<price>\d[\d ]*)\s*грн", re.I)
 _GENERIC = {"придбати квиток", "подія вже відбулася", "особистий кабінет"}
 
 
-def _get_with_retry(get, url: str, **kwargs) -> httpx.Response:
-    """Retry transient GET timeouts; never hide exhausted attempts or parser errors."""
+def _get_with_retry(get, url: str, *, timeout: float = 20.0, **kwargs) -> httpx.Response:
+    """Give slow pages longer read budgets, while keeping retries bounded."""
     for attempt in range(3):
+        request_timeout = httpx.Timeout(timeout, read=timeout * (attempt + 1))
         try:
-            response = get(url, **kwargs)
+            response = get(url, timeout=request_timeout, **kwargs)
             response.raise_for_status()
             return response
-        except httpx.TimeoutException:
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            logging.getLogger(__name__).warning(
+                "KASA GET %s attempt %s/3 failed (%s); read timeout=%ss",
+                url, attempt + 1, type(exc).__name__, request_timeout.read,
+            )
             if attempt == 2:
                 raise
             time.sleep(attempt + 1)
@@ -175,7 +181,7 @@ def collect(timeout: float = 20.0) -> list[RawEvent]:
         follow_redirects=True,
     ) as client:
         for venue_url in venue_urls:
-            venue_response = _get_with_retry(client.get, venue_url)
+            venue_response = _get_with_retry(client.get, venue_url, timeout=timeout)
             venue_response.raise_for_status()
             for event in _parse_venue_page(venue_response.text, venue_url, now):
                 if event.external_id in seen_ids:

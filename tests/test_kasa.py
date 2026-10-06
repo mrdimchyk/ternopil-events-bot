@@ -73,7 +73,7 @@ def test_kasa_retries_transient_timeout_then_returns_response(monkeypatch):
     attempts = []
     monkeypatch.setattr('app.collectors.kasa.time.sleep', lambda seconds: None)
 
-    def get(url):
+    def get(url, **kwargs):
         attempts.append(url)
         if len(attempts) < 3:
             raise httpx.ReadTimeout('The read operation timed out')
@@ -90,7 +90,7 @@ def test_kasa_exhausted_timeouts_still_fail_and_http_errors_are_not_retried(monk
     attempts = []
     monkeypatch.setattr('app.collectors.kasa.time.sleep', lambda seconds: None)
 
-    def get(url):
+    def get(url, **kwargs):
         attempts.append(url)
         raise httpx.ReadTimeout('timeout')
 
@@ -99,10 +99,44 @@ def test_kasa_exhausted_timeouts_still_fail_and_http_errors_are_not_retried(monk
     assert len(attempts) == 3
     attempts.clear()
 
-    def forbidden(url):
+    def forbidden(url, **kwargs):
         attempts.append(url)
         return httpx.Response(403, request=httpx.Request('GET', url))
 
     with pytest.raises(httpx.HTTPStatusError):
         _get_with_retry(forbidden, 'https://kasa.com.ua/ternopol/')
     assert len(attempts) == 1
+
+
+def test_kasa_increases_read_budget_for_slow_page(monkeypatch):
+    import httpx
+    from app.collectors.kasa import _get_with_retry
+    budgets = []
+    monkeypatch.setattr("app.collectors.kasa.time.sleep", lambda seconds: None)
+
+    def get(url, *, timeout):
+        budgets.append((timeout.connect, timeout.read))
+        if timeout.read < 50:
+            raise httpx.ReadTimeout("slow page")
+        return httpx.Response(200, request=httpx.Request("GET", url))
+
+    assert _get_with_retry(get, "https://kasa.com.ua/ternopol/").status_code == 200
+    assert budgets == [(20, 20), (20, 40), (20, 60)]
+
+
+def test_kasa_retries_connection_reset_and_logs_url(monkeypatch, caplog):
+    import httpx
+    from app.collectors.kasa import _get_with_retry
+    attempts = []
+    monkeypatch.setattr("app.collectors.kasa.time.sleep", lambda seconds: None)
+
+    def get(url, **kwargs):
+        attempts.append(url)
+        if len(attempts) == 1:
+            raise httpx.ReadError("connection reset")
+        return httpx.Response(200, request=httpx.Request("GET", url))
+
+    _get_with_retry(get, "https://kasa.com.ua/venue", timeout=5)
+    assert len(attempts) == 2
+    assert "https://kasa.com.ua/venue" in caplog.text
+    assert "ReadError" in caplog.text
